@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /endeavors/{endeavorId} {
+      allow read, write: if isOwner(resource.data.user_uid) || isOwner(request.resource.data.user_uid);
+    }
+
+    match /sessions/{sessionId} {
+      allow read, write: if isOwner(resource.data.user_uid) || isOwner(request.resource.data.user_uid);
+    }
+
+    match /users/{uid}/active_session/{docId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // 多设备互斥（单 active session）的强一致性无法仅靠规则表达，
+    // 需在客户端/后台通过 transaction 检查 status/deviceId 保证。
+  }
+}
