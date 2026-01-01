@@ -1,20 +1,89 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isOwner(uid) {
-      return request.auth != null && request.auth.uid == uid;
+    function isSignedIn() {
+      return request.auth != null;
     }
 
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function hasOnlyAllowedFields(allowed) {
+      return request.resource.data.keys().hasOnly(allowed);
+    }
+
+    function isNonEmptyString(value, max) {
+      return value is string && value.size() > 0 && value.size() <= max;
+    }
+
+    allow read, write: if false; // 默认拒绝，具体集合再单独授权
+
     match /endeavors/{endeavorId} {
-      allow read, write: if isOwner(resource.data.user_uid) || isOwner(request.resource.data.user_uid);
+      function validEndeavorCreate() {
+        return (
+          hasOnlyAllowedFields(['user_uid', 'name', 'isPrimary', 'status', 'createdAt', 'updatedAt']) &&
+          request.resource.data.user_uid is string &&
+          request.resource.data.isPrimary is bool &&
+          request.resource.data.status in ['active', 'archived'] &&
+          isNonEmptyString(request.resource.data.name, 200) &&
+          request.resource.data.createdAt is string &&
+          request.resource.data.updatedAt is string
+        );
+      }
+
+      function validEndeavorUpdate() {
+        return (
+          hasOnlyAllowedFields(['user_uid', 'name', 'isPrimary', 'status', 'updatedAt']) &&
+          request.resource.data.user_uid == resource.data.user_uid &&
+          request.resource.data.isPrimary is bool &&
+          request.resource.data.status in ['active', 'archived'] &&
+          isNonEmptyString(request.resource.data.name, 200) &&
+          request.resource.data.updatedAt is string
+        );
+      }
+
+      allow get, list: if isOwner(resource.data.user_uid);
+      allow create: if isOwner(request.resource.data.user_uid) && validEndeavorCreate();
+      allow update, delete: if isOwner(resource.data.user_uid) && validEndeavorUpdate();
     }
 
     match /sessions/{sessionId} {
-      allow read, write: if isOwner(resource.data.user_uid) || isOwner(request.resource.data.user_uid);
+      function validSessionCreate() {
+        return (
+          hasOnlyAllowedFields(['user_uid', 'endeavorId', 'startAt', 'durationSec', 'dayKey', 'createdAt']) &&
+          request.resource.data.user_uid is string &&
+          request.resource.data.endeavorId is string &&
+          request.resource.data.startAt is string &&
+          request.resource.data.durationSec is int &&
+          request.resource.data.durationSec >= 0 &&
+          request.resource.data.dayKey is string &&
+          request.resource.data.createdAt is string
+        );
+      }
+
+      allow get, list: if isOwner(resource.data.user_uid);
+      allow create: if isOwner(request.resource.data.user_uid) && validSessionCreate();
+      allow update, delete: if false; // 会话记录写入后不允许修改/删除
     }
 
     match /users/{uid}/active_session/{docId} {
-      allow read, write: if isOwner(uid);
+      function validActiveSessionWrite() {
+        return (
+          hasOnlyAllowedFields(['endeavorId', 'startAt', 'durationSec', 'deviceId', 'heartbeatAt', 'status']) &&
+          request.resource.data.endeavorId is string &&
+          request.resource.data.startAt is string &&
+          request.resource.data.durationSec is int &&
+          request.resource.data.durationSec >= 0 &&
+          isNonEmptyString(request.resource.data.deviceId, 200) &&
+          request.resource.data.heartbeatAt is string &&
+          request.resource.data.status in ['active', 'ended']
+        );
+      }
+
+      allow get, list: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validActiveSessionWrite();
+      allow delete: if isOwner(uid);
     }
 
     // 多设备互斥（单 active session）的强一致性无法仅靠规则表达，
