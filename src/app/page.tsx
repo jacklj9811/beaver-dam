@@ -34,6 +34,8 @@ export default function Home() {
   const [allSessions, setAllSessions] = useState<FocusSession[]>([]);
   const [dailyTotals, setDailyTotals] = useState<DailyTotal[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [nameStatus, setNameStatus] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
+  const [savingName, setSavingName] = useState(false);
   const [loading, setLoading] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(2);
 
@@ -107,8 +109,21 @@ export default function Home() {
 
   const handleRename = async () => {
     if (!endeavor?.id || editingName.trim().length === 0) return;
-    await updateEndeavorName(endeavor.id, editingName.trim());
-    setEndeavor({ ...endeavor, name: editingName.trim() });
+    setNameStatus(null);
+    setSavingName(true);
+    const nextName = editingName.trim();
+    try {
+      await updateEndeavorName(endeavor.id, nextName);
+      setEndeavor({ ...endeavor, name: nextName });
+      setNameStatus({ message: '名称已保存', variant: 'success' });
+    } catch (error) {
+      setNameStatus({
+        message: error instanceof Error ? error.message : '名称保存失败',
+        variant: 'error'
+      });
+    } finally {
+      setSavingName(false);
+    }
   };
 
   const todayKey = getDayKey();
@@ -134,10 +149,17 @@ export default function Home() {
             onBlur={handleRename}
             placeholder="输入事业名称"
           />
-          <button className="button-primary sm:w-auto" onClick={handleRename}>
+          <button className="button-primary sm:w-auto" onClick={handleRename} disabled={savingName}>
             保存名称
           </button>
         </div>
+        {nameStatus && (
+          <p
+            className={`text-sm mt-1 ${nameStatus.variant === 'success' ? 'text-emerald-300' : 'text-amber-300'}`}
+          >
+            {nameStatus.message}
+          </p>
+        )}
         <p className="text-slate-400 text-sm mt-2">默认只存在一个 active 主线事业，轻量改名入口。</p>
       </header>
 
