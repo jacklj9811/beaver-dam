@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next.js dev (inspect)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "NODE_OPTIONS=--inspect-brk npm run dev",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
