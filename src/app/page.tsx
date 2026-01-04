@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AccumulationBar from '@/components/AccumulationBar';
 import { getCurrentUserUid } from '@/lib/firebase/auth';
 import {
@@ -25,7 +25,7 @@ function formatHoursMinutes(totalSec: number) {
 }
 
 export default function Home() {
-  const uid = useMemo(() => getCurrentUserUid(), []);
+  const [uid, setUid] = useState<string | null>(null);
   const [endeavor, setEndeavor] = useState<Endeavor | null>(null);
   const [editingName, setEditingName] = useState('');
   const [deviceId, setDeviceId] = useState('');
@@ -40,10 +40,30 @@ export default function Home() {
   const [zoomLevel, setZoomLevel] = useState(2);
 
   useEffect(() => {
+    let cancelled = false;
+    const initAuth = async () => {
+      try {
+        const userUid = await getCurrentUserUid();
+        if (!cancelled) setUid(userUid);
+      } catch (error) {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : '无法获取登录状态');
+          setLoading(false);
+        }
+      }
+    };
+    initAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setDeviceId(getOrCreateDeviceId());
   }, []);
 
   const refreshSessions = useCallback(async () => {
+    if (!uid) return;
     const [sessions, totals] = await Promise.all([queryAllSessions(uid), queryDailyTotals({ uid })]);
     setAllSessions(sessions);
     setDailyTotals(totals);
@@ -52,12 +72,19 @@ export default function Home() {
   useEffect(() => {
     let unsub: (() => void) | undefined;
     const init = async () => {
-      const primary = await createOrGetPrimaryEndeavor(uid);
-      setEndeavor(primary);
-      setEditingName(primary.name);
-      await refreshSessions();
-      unsub = listenActiveSession(uid, (session) => setActiveSession(session));
-      setLoading(false);
+      if (!uid) return;
+      setLoading(true);
+      try {
+        const primary = await createOrGetPrimaryEndeavor(uid);
+        setEndeavor(primary);
+        setEditingName(primary.name);
+        await refreshSessions();
+        unsub = listenActiveSession(uid, (session) => setActiveSession(session));
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : '初始化失败');
+      } finally {
+        setLoading(false);
+      }
     };
     init();
     return () => {
@@ -81,14 +108,15 @@ export default function Home() {
   }, [activeSession]);
 
   useEffect(() => {
-    if (!activeSession || activeSession.status !== 'active' || !deviceId || activeSession.deviceId !== deviceId) return undefined;
+    if (!uid || !activeSession || activeSession.status !== 'active' || !deviceId || activeSession.deviceId !== deviceId)
+      return undefined;
     const beat = () => heartbeat(uid, deviceId).catch(() => undefined);
     const interval = setInterval(beat, 45000);
     return () => clearInterval(interval);
   }, [activeSession, deviceId, uid]);
 
   const handleStart = async () => {
-    if (!endeavor) return;
+    if (!endeavor || !uid) return;
     setStatus(null);
     try {
       await startActiveSession({ uid, endeavorId: endeavor.id ?? '', deviceId, durationSec: DEFAULT_SESSION_SECONDS });
@@ -98,6 +126,7 @@ export default function Home() {
   };
 
   const handleEnd = async () => {
+    if (!uid) return;
     setStatus(null);
     try {
       await endActiveSession({ uid, deviceId });
@@ -192,7 +221,7 @@ export default function Home() {
         ) : (
           <div className="space-y-3">
             <div className="text-5xl font-mono text-slate-200">{formatDuration(DEFAULT_SESSION_SECONDS)}</div>
-            <button className="button-primary" onClick={handleStart} disabled={!deviceId}>
+            <button className="button-primary" onClick={handleStart} disabled={!deviceId || !uid}>
               开始专注
             </button>
             <p className="text-slate-400 text-sm">开始专注需联网并写入 active session。</p>
