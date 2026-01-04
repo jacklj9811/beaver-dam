@@ -2,14 +2,20 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Next.js dev (inspect)",
-      "type": "node-terminal",
+      "name": "Next.js: debug dev server",
+      "type": "node",
       "request": "launch",
-      "command": "npm run dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "${workspaceFolder}",
-      "env": {
-        "NODE_OPTIONS": "--inspect-brk"
-      }
+      "console": "integratedTerminal",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "autoAttachChildProcesses": true
     }
   ]
 }
