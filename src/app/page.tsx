@@ -225,7 +225,7 @@ export default function Home() {
       <section className="section-card">
         <div className="section-title">账号登录</div>
         <p className="text-sm text-slate-400 mb-3">使用邮箱密码可以在不同设备之间同步数据，匿名登录适合快速试用。</p>
-        {authStatus && <p className="text-amber-300 text-sm mb-2">{authStatus}</p>}
+        {authStatus && <p className="text-amber-300 text-sm mb-2 break-all">{authStatus}</p>}
         {!authReady ? (
           <p className="text-slate-400">正在检查登录状态...</p>
         ) : (
@@ -327,7 +327,7 @@ export default function Home() {
 
           <section className="section-card">
             <div className="section-title">计时控制区</div>
-            {status && <p className="text-amber-300 text-sm mb-2">{status}</p>}
+            {status && <p className="text-amber-300 text-sm mb-2 break-all">{status}</p>}
             {dataLoading ? (
               <p className="text-slate-400">加载中...</p>
             ) : isLockedByOther ? (
