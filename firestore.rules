@@ -34,11 +34,13 @@ service cloud.firestore {
 
       function validEndeavorUpdate() {
         return (
-          hasOnlyAllowedFields(['user_uid', 'name', 'isPrimary', 'status', 'updatedAt']) &&
+          hasOnlyAllowedFields(['user_uid', 'name', 'isPrimary', 'status', 'createdAt', 'updatedAt']) &&
           request.resource.data.user_uid == resource.data.user_uid &&
           request.resource.data.isPrimary is bool &&
           request.resource.data.status in ['active', 'archived'] &&
           isNonEmptyString(request.resource.data.name, 200) &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.createdAt is string &&
           request.resource.data.updatedAt is string
         );
       }
