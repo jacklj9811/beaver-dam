@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import AccumulationBar from '@/components/AccumulationBar';
-import { listenAuthState, registerWithEmail, signInAsGuest, signInWithEmail, signOutCurrentUser } from '@/lib/firebase/auth';
+import {
+  linkGuestWithEmail,
+  listenAuthState,
+  registerWithEmail,
+  signInAsGuest,
+  signInWithEmail,
+  signOutCurrentUser
+} from '@/lib/firebase/auth';
 import {
   createOrGetPrimaryEndeavor,
   endActiveSession,
@@ -180,7 +187,10 @@ export default function Home() {
     setAuthStatus(null);
     setAuthBusy(true);
     try {
-      if (authMode === 'signin') {
+      if (authUser?.isAnonymous) {
+        await linkGuestWithEmail(email, password);
+        setAuthStatus('已升级为邮箱账号');
+      } else if (authMode === 'signin') {
         await signInWithEmail(email, password);
         setAuthStatus('登录成功');
       } else {
@@ -193,6 +203,8 @@ export default function Home() {
       setAuthBusy(false);
     }
   };
+
+  const isAnonymousUser = authUser?.isAnonymous;
 
   const handleGuestLogin = async () => {
     setAuthStatus(null);
@@ -254,15 +266,17 @@ export default function Home() {
             </div>
             <div className="flex flex-wrap gap-2 mt-4">
               <button className="button-primary" onClick={handleEmailAuth} disabled={authBusy}>
-                {authMode === 'signin' ? '邮箱登录' : '注册并登录'}
+                {isAnonymousUser ? '升级为邮箱账号' : authMode === 'signin' ? '邮箱登录' : '注册并登录'}
               </button>
-              <button
-                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
-                onClick={() => setAuthMode((prev) => (prev === 'signin' ? 'signup' : 'signin'))}
-                disabled={authBusy}
-              >
-                {authMode === 'signin' ? '切换到注册' : '已有账号，去登录'}
-              </button>
+              {!isAnonymousUser && (
+                <button
+                  className="px-4 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
+                  onClick={() => setAuthMode((prev) => (prev === 'signin' ? 'signup' : 'signin'))}
+                  disabled={authBusy}
+                >
+                  {authMode === 'signin' ? '切换到注册' : '已有账号，去登录'}
+                </button>
+              )}
               <button
                 className="px-4 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
                 onClick={handleGuestLogin}
