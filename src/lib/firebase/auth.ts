@@ -1,9 +1,11 @@
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   onAuthStateChanged,
   signInAnonymously,
   signInWithEmailAndPassword,
   signOut,
+  linkWithCredential,
   type User
 } from 'firebase/auth';
 import { firebaseAuth } from './client';
@@ -28,6 +30,17 @@ export async function registerWithEmail(email: string, password: string): Promis
   const credential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
   if (credential.user?.uid) return credential.user;
   throw new Error('注册失败，请重试');
+}
+
+export async function linkGuestWithEmail(email: string, password: string): Promise<User> {
+  const user = firebaseAuth.currentUser;
+  if (!user || !user.isAnonymous) {
+    throw new Error('当前不是匿名账号，无法升级');
+  }
+  const credential = EmailAuthProvider.credential(email, password);
+  const result = await linkWithCredential(user, credential);
+  if (result.user?.uid) return result.user;
+  throw new Error('升级失败，请重试');
 }
 
 export async function signOutCurrentUser() {
