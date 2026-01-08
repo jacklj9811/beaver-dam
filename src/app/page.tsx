@@ -12,19 +12,24 @@ import {
   signOutCurrentUser
 } from '@/lib/firebase/auth';
 import {
-  createOrGetPrimaryEndeavor,
+  activateMainCareer,
+  archiveActiveMainCareer,
+  createAndActivateMainCareer,
   endActiveSession,
+  fetchUserProfile,
   heartbeat,
   listenActiveSession,
+  listMainCareers,
   queryAllSessions,
   queryDailyTotals,
   startActiveSession,
-  updateEndeavorName
+  updateMainCareerTitle
 } from '@/lib/firebase/firestore';
 import { getOrCreateDeviceId } from '@/lib/device/deviceId';
 import { DEFAULT_SESSION_SECONDS, formatDuration, getDayKey } from '@/lib/time';
 import { computeAvgDailySec, findMilestone, formatEtaDays } from '@/lib/core/milestones';
-import type { ActiveSession, DailyTotal, Endeavor, FocusSession } from '@/types';
+import type { ActiveSession, DailyTotal, FocusSession, MainCareer, UserProfile } from '@/types';
+import type { Timestamp } from 'firebase/firestore';
 
 function formatHoursMinutes(totalSec: number) {
   const hours = Math.floor(totalSec / 3600);
@@ -34,8 +39,10 @@ function formatHoursMinutes(totalSec: number) {
 
 export default function Home() {
   const [uid, setUid] = useState<string | null>(null);
-  const [endeavor, setEndeavor] = useState<Endeavor | null>(null);
+  const [mainCareers, setMainCareers] = useState<MainCareer[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [newCareerName, setNewCareerName] = useState('');
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -74,12 +81,21 @@ export default function Home() {
     setDailyTotals(totals);
   }, [uid]);
 
+  const refreshMainCareers = useCallback(async () => {
+    if (!uid) return;
+    const [careers, profile] = await Promise.all([listMainCareers(uid), fetchUserProfile(uid)]);
+    setMainCareers(careers);
+    setUserProfile(profile);
+  }, [uid]);
+
   useEffect(() => {
     let unsub: (() => void) | undefined;
     const init = async () => {
       if (!uid) {
-        setEndeavor(null);
+        setMainCareers([]);
+        setUserProfile(null);
         setEditingName('');
+        setNewCareerName('');
         setAllSessions([]);
         setDailyTotals([]);
         setActiveSession(null);
@@ -88,10 +104,7 @@ export default function Home() {
       }
       setDataLoading(true);
       try {
-        const primary = await createOrGetPrimaryEndeavor(uid);
-        setEndeavor(primary);
-        setEditingName(primary.name);
-        await refreshSessions();
+        await Promise.all([refreshSessions(), refreshMainCareers()]);
         unsub = listenActiveSession(uid, (session) => setActiveSession(session));
       } catch (error) {
         setStatus(error instanceof Error ? error.message : '初始化失败');
@@ -103,7 +116,7 @@ export default function Home() {
     return () => {
       if (unsub) unsub();
     };
-  }, [refreshSessions, uid]);
+  }, [refreshMainCareers, refreshSessions, uid]);
 
   useEffect(() => {
     if (!activeSession || activeSession.status !== 'active') {
@@ -129,10 +142,15 @@ export default function Home() {
   }, [activeSession, deviceId, uid]);
 
   const handleStart = async () => {
-    if (!endeavor || !uid) return;
+    if (!activeMainCareer || !uid) return;
     setStatus(null);
     try {
-      await startActiveSession({ uid, endeavorId: endeavor.id ?? '', deviceId, durationSec: DEFAULT_SESSION_SECONDS });
+      await startActiveSession({
+        uid,
+        mainCareerId: activeMainCareer.id ?? '',
+        deviceId,
+        durationSec: DEFAULT_SESSION_SECONDS
+      });
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '无法开始专注');
     }
@@ -143,20 +161,22 @@ export default function Home() {
     setStatus(null);
     try {
       await endActiveSession({ uid, deviceId });
-      await refreshSessions();
+      await Promise.all([refreshSessions(), refreshMainCareers()]);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '结束失败');
     }
   };
 
   const handleRename = async () => {
-    if (!endeavor?.id || editingName.trim().length === 0) return;
+    if (!activeMainCareer?.id || editingName.trim().length === 0) return;
     setNameStatus(null);
     setSavingName(true);
     const nextName = editingName.trim();
     try {
-      await updateEndeavorName(endeavor.id, nextName);
-      setEndeavor({ ...endeavor, name: nextName });
+      await updateMainCareerTitle({ uid: uid ?? '', mainCareerId: activeMainCareer.id, title: nextName });
+      setMainCareers((prev) =>
+        prev.map((career) => (career.id === activeMainCareer.id ? { ...career, title: nextName } : career))
+      );
       setNameStatus({ message: '名称已保存', variant: 'success' });
     } catch (error) {
       setNameStatus({
@@ -168,16 +188,79 @@ export default function Home() {
     }
   };
 
+  const handleCreateNewCareer = async () => {
+    if (!uid) return;
+    setStatus(null);
+    const title = newCareerName.trim();
+    try {
+      const confirmed =
+        activeMainCareer?.status === 'active'
+          ? window.confirm('切换主线会归档当前主线；历史专注不可转移。确认继续？')
+          : true;
+      if (!confirmed) return;
+      await createAndActivateMainCareer({ uid, title });
+      setNewCareerName('');
+      await refreshMainCareers();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '创建主线失败');
+    }
+  };
+
+  const handleActivateCareer = async (careerId: string) => {
+    if (!uid) return;
+    setStatus(null);
+    const confirmed = window.confirm('切换主线会归档当前主线；历史专注不可转移。确认继续？');
+    if (!confirmed) return;
+    try {
+      await activateMainCareer({ uid, mainCareerId: careerId });
+      await refreshMainCareers();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '切换主线失败');
+    }
+  };
+
+  const handleArchiveCareer = async () => {
+    if (!uid) return;
+    setStatus(null);
+    const confirmed = window.confirm('归档后不可再计入专注。确认归档？');
+    if (!confirmed) return;
+    try {
+      await archiveActiveMainCareer(uid);
+      await refreshMainCareers();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '归档失败');
+    }
+  };
+
   const todayKey = getDayKey();
-  const todayTotalSec = dailyTotals.find((d) => d.dayKey === todayKey)?.totalSec ?? 0;
-  const totalFocusSec = allSessions.reduce((acc, cur) => acc + cur.durationSec, 0);
+  const todayTotalSec =
+    userProfile?.todayKey === todayKey
+      ? userProfile?.todayFocusSec ?? 0
+      : dailyTotals.find((d) => d.dayKey === todayKey)?.totalSec ?? 0;
+  const totalFocusSec = userProfile?.totalFocusSec ?? allSessions.reduce((acc, cur) => acc + cur.durationSec, 0);
   const milestoneInfo = findMilestone(totalFocusSec);
   const avgDailySec = computeAvgDailySec(dailyTotals, 14);
   const etaText = formatEtaDays(milestoneInfo.remainingSec, avgDailySec);
   const focusPercent = todayTotalSec / 86400;
 
-  const isLockedByOther = activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId;
-  const isActiveLocally = activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId;
+  const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
+  const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
+  const isAnySessionActive = activeSession?.status === 'active';
+
+  const activeMainCareerId = userProfile?.activeMainCareerId ?? null;
+  const activeMainCareer = mainCareers.find((career) => career.id === activeMainCareerId) ?? null;
+  const sortedCareers = [...mainCareers].sort((a, b) => {
+    if (a.id === activeMainCareerId) return -1;
+    if (b.id === activeMainCareerId) return 1;
+    const aTime = (a.activatedAt ?? a.createdAt).toMillis();
+    const bTime = (b.activatedAt ?? b.createdAt).toMillis();
+    return bTime - aTime;
+  });
+  const formatTimestamp = (value?: Timestamp) => (value ? value.toDate().toLocaleString() : '—');
+
+  useEffect(() => {
+    setEditingName(activeMainCareer?.title ?? '');
+  }, [activeMainCareer?.id, activeMainCareer?.title]);
 
   const handleEmailAuth = async () => {
     if (!email || !password) {
@@ -317,17 +400,62 @@ export default function Home() {
         <>
           <header className="section-card">
             <p className="text-sm text-slate-300">主线事业</p>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-2">
-              <input
-                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 w-full sm:w-auto"
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onBlur={handleRename}
-                placeholder="输入事业名称"
-              />
-              <button className="button-primary sm:w-auto" onClick={handleRename} disabled={savingName}>
-                保存名称
-              </button>
+            {status && <p className="text-amber-300 text-sm mt-2 break-all">{status}</p>}
+            <div className="grid gap-4 mt-3">
+              <div className="flex flex-col gap-2">
+                <p className="text-slate-300 text-sm">当前主线</p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <input
+                    className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 w-full sm:w-auto disabled:opacity-60"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={handleRename}
+                    placeholder={activeMainCareer ? '输入主线名称' : '请先创建主线'}
+                    disabled={!activeMainCareer || activeMainCareer.status === 'archived' || isAnySessionActive}
+                  />
+                  <button
+                    className="button-primary sm:w-auto"
+                    onClick={handleRename}
+                    disabled={!activeMainCareer || savingName || activeMainCareer.status === 'archived' || isAnySessionActive}
+                  >
+                    保存名称
+                  </button>
+                  <button
+                    className="px-4 py-2 rounded-lg border border-rose-400/60 text-rose-200 hover:border-rose-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={handleArchiveCareer}
+                    disabled={!activeMainCareer || activeMainCareer.status !== 'active' || isAnySessionActive}
+                  >
+                    归档当前主线
+                  </button>
+                </div>
+                {activeMainCareer ? (
+                  <p className="text-slate-400 text-sm">
+                    状态：{activeMainCareer.status === 'active' ? 'Active' : 'Archived'} ·
+                    累计 {formatDuration(activeMainCareer.totalFocusSec)} / {activeMainCareer.totalSessions} 次
+                  </p>
+                ) : (
+                  <p className="text-slate-400 text-sm">当前没有 active 主线，请先创建并激活。</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <p className="text-slate-300 text-sm">创建并激活新主线</p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <input
+                    className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 w-full sm:w-auto disabled:opacity-60"
+                    value={newCareerName}
+                    onChange={(e) => setNewCareerName(e.target.value)}
+                    placeholder="输入新的主线名称"
+                    disabled={isAnySessionActive}
+                  />
+                  <button
+                    className="button-primary sm:w-auto"
+                    onClick={handleCreateNewCareer}
+                    disabled={isAnySessionActive || newCareerName.trim().length < 2}
+                  >
+                    创建并激活
+                  </button>
+                </div>
+              </div>
             </div>
             {nameStatus && (
               <p
@@ -336,12 +464,11 @@ export default function Home() {
                 {nameStatus.message}
               </p>
             )}
-            <p className="text-slate-400 text-sm mt-2">默认只存在一个 active 主线事业，轻量改名入口。</p>
+            {isAnySessionActive && <p className="text-slate-400 text-sm mt-2">请先结束当前专注后再管理主线。</p>}
           </header>
 
           <section className="section-card">
             <div className="section-title">计时控制区</div>
-            {status && <p className="text-amber-300 text-sm mb-2 break-all">{status}</p>}
             {dataLoading ? (
               <p className="text-slate-400">加载中...</p>
             ) : isLockedByOther ? (
@@ -368,10 +495,54 @@ export default function Home() {
             ) : (
               <div className="space-y-3">
                 <div className="text-5xl font-mono text-slate-200">{formatDuration(DEFAULT_SESSION_SECONDS)}</div>
-                <button className="button-primary" onClick={handleStart} disabled={!deviceId || !uid}>
+                <button
+                  className="button-primary"
+                  onClick={handleStart}
+                  disabled={!deviceId || !uid || !activeMainCareer}
+                >
                   开始专注
                 </button>
-                <p className="text-slate-400 text-sm">开始专注需联网并写入 active session。</p>
+                {!activeMainCareer ? (
+                  <p className="text-amber-300 text-sm">请先创建并激活主线后再开始专注。</p>
+                ) : (
+                  <p className="text-slate-400 text-sm">开始专注需联网并写入 active session。</p>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="section-card">
+            <div className="section-title">主线历史</div>
+            {sortedCareers.length === 0 ? (
+              <p className="text-slate-400 text-sm">暂未创建主线。</p>
+            ) : (
+              <div className="space-y-3">
+                {sortedCareers.map((career) => (
+                  <div
+                    key={career.id}
+                    className="p-4 bg-slate-800/60 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                  >
+                    <div>
+                      <p className="text-lg font-semibold text-slate-100">{career.title}</p>
+                      <p className="text-slate-400 text-sm">
+                        状态：{career.status === 'active' ? 'Active' : 'Archived'} ·
+                        累计 {formatDuration(career.totalFocusSec)} / {career.totalSessions} 次
+                      </p>
+                      <p className="text-slate-500 text-xs mt-1">
+                        启用：{formatTimestamp(career.activatedAt)} · 归档：{formatTimestamp(career.archivedAt)}
+                      </p>
+                    </div>
+                    {career.status === 'archived' && (
+                      <button
+                        className="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:border-slate-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => handleActivateCareer(career.id ?? '')}
+                        disabled={isAnySessionActive}
+                      >
+                        激活此主线
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </section>
