@@ -116,7 +116,7 @@ export default function Home() {
     return () => {
       if (unsub) unsub();
     };
-  }, [refreshSessions, uid]);
+  }, [refreshMainCareers, refreshSessions, uid]);
 
   useEffect(() => {
     if (!activeSession || activeSession.status !== 'active') {
@@ -243,9 +243,9 @@ export default function Home() {
   const etaText = formatEtaDays(milestoneInfo.remainingSec, avgDailySec);
   const focusPercent = todayTotalSec / 86400;
 
-  const isLockedByOther = activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId;
-  const isActiveLocally = activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId;
-  const isAnySessionActive = activeSession && activeSession.status === 'active';
+  const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
+  const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
+  const isAnySessionActive = activeSession?.status === 'active';
 
   const activeMainCareerId = userProfile?.activeMainCareerId ?? null;
   const activeMainCareer = mainCareers.find((career) => career.id === activeMainCareerId) ?? null;
