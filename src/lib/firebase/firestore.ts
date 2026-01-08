@@ -1,51 +1,196 @@
 import {
-  addDoc,
   collection,
   doc,
   getDocs,
-  limit,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
-  updateDoc,
-  where
+  serverTimestamp,
+  where,
+  increment,
+  deleteField
 } from 'firebase/firestore';
 import { firestore } from './client';
 import { DEFAULT_SESSION_SECONDS, getDayKey } from '../time';
-import type { ActiveSession, DailyTotal, Endeavor, FocusSession } from '@/types';
+import type { ActiveSession, DailyTotal, FocusSession, MainCareer, UserProfile } from '@/types';
 
-export async function createOrGetPrimaryEndeavor(uid: string, defaultName = '我的主线事业'): Promise<Endeavor> {
-  const endeavorsRef = collection(firestore, 'endeavors');
-  const primaryQuery = query(endeavorsRef, where('user_uid', '==', uid), where('isPrimary', '==', true), limit(1));
-  const existing = await getDocs(primaryQuery);
-  if (!existing.empty) {
-    const docSnap = existing.docs[0];
-    return { ...(docSnap.data() as Endeavor), id: docSnap.id };
-  }
-  const now = new Date().toISOString();
-  const docRef = await addDoc(endeavorsRef, {
-    user_uid: uid,
-    name: defaultName,
-    isPrimary: true,
-    status: 'active',
-    createdAt: now,
-    updatedAt: now
-  });
-  return {
-    id: docRef.id,
-    user_uid: uid,
-    name: defaultName,
-    isPrimary: true,
-    status: 'active',
-    createdAt: now,
-    updatedAt: now
-  };
+export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
+  const userRef = doc(firestore, 'users', uid);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) return null;
+  return { ...(snap.data() as UserProfile), id: snap.id };
 }
 
-export async function updateEndeavorName(endeavorId: string, name: string) {
-  const ref = doc(firestore, 'endeavors', endeavorId);
-  await updateDoc(ref, { name, updatedAt: new Date().toISOString() });
+export async function listMainCareers(uid: string): Promise<MainCareer[]> {
+  const careersRef = collection(firestore, 'mainCareers');
+  const careersQuery = query(careersRef, where('user_uid', '==', uid), orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(careersQuery);
+  return snapshot.docs.map((docSnap) => ({ ...(docSnap.data() as MainCareer), id: docSnap.id }));
+}
+
+export async function createAndActivateMainCareer(params: { uid: string; title: string }): Promise<string> {
+  const { uid, title } = params;
+  const trimmedTitle = title.trim();
+  if (trimmedTitle.length < 2 || trimmedTitle.length > 30) {
+    throw new Error('主线名称需为 2~30 个字符');
+  }
+  const careersRef = collection(firestore, 'mainCareers');
+  const newCareerRef = doc(careersRef);
+  const userRef = doc(firestore, 'users', uid);
+  const activeSessionRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  const nowKey = getDayKey();
+  await runTransaction(firestore, async (tx) => {
+    const activeSnap = await tx.get(activeSessionRef);
+    if (activeSnap.exists()) {
+      const activeData = activeSnap.data() as ActiveSession;
+      if (activeData.status === 'active') {
+        throw new Error('请先结束当前专注');
+      }
+    }
+
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.data() as UserProfile | undefined;
+    const existingActiveId = userData?.activeMainCareerId ?? null;
+    if (existingActiveId) {
+      const oldCareerRef = doc(firestore, 'mainCareers', existingActiveId);
+      const oldCareerSnap = await tx.get(oldCareerRef);
+      if (oldCareerSnap.exists()) {
+        tx.update(oldCareerRef, { status: 'archived', archivedAt: serverTimestamp() });
+      }
+    }
+
+    tx.set(newCareerRef, {
+      user_uid: uid,
+      title: trimmedTitle,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      activatedAt: serverTimestamp(),
+      totalFocusSec: 0,
+      totalSessions: 0
+    });
+
+    const nextProfile: Partial<UserProfile> = {
+      activeMainCareerId: newCareerRef.id,
+      totalFocusSec: userData?.totalFocusSec ?? 0,
+      todayFocusSec: userData?.todayFocusSec ?? 0,
+      todayKey: userData?.todayKey ?? nowKey
+    };
+    tx.set(userRef, nextProfile, { merge: true });
+  });
+
+  return newCareerRef.id;
+}
+
+export async function activateMainCareer(params: { uid: string; mainCareerId: string }) {
+  const { uid, mainCareerId } = params;
+  const userRef = doc(firestore, 'users', uid);
+  const targetRef = doc(firestore, 'mainCareers', mainCareerId);
+  const activeSessionRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  await runTransaction(firestore, async (tx) => {
+    const activeSnap = await tx.get(activeSessionRef);
+    if (activeSnap.exists()) {
+      const activeData = activeSnap.data() as ActiveSession;
+      if (activeData.status === 'active') {
+        throw new Error('请先结束当前专注');
+      }
+    }
+
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.data() as UserProfile | undefined;
+    const existingActiveId = userData?.activeMainCareerId ?? null;
+    if (existingActiveId && existingActiveId !== mainCareerId) {
+      const oldCareerRef = doc(firestore, 'mainCareers', existingActiveId);
+      const oldCareerSnap = await tx.get(oldCareerRef);
+      if (oldCareerSnap.exists()) {
+        tx.update(oldCareerRef, { status: 'archived', archivedAt: serverTimestamp() });
+      }
+    }
+
+    const targetSnap = await tx.get(targetRef);
+    if (!targetSnap.exists()) throw new Error('目标主线不存在');
+    const targetData = targetSnap.data() as MainCareer;
+    if (targetData.user_uid !== uid) throw new Error('无权限操作');
+
+    tx.update(targetRef, {
+      status: 'active',
+      activatedAt: serverTimestamp(),
+      archivedAt: deleteField()
+    });
+    const nowKey = getDayKey();
+    tx.set(
+      userRef,
+      {
+        activeMainCareerId: mainCareerId,
+        totalFocusSec: userData?.totalFocusSec ?? 0,
+        todayFocusSec: userData?.todayFocusSec ?? 0,
+        todayKey: userData?.todayKey ?? nowKey
+      },
+      { merge: true }
+    );
+  });
+}
+
+export async function archiveActiveMainCareer(uid: string) {
+  const userRef = doc(firestore, 'users', uid);
+  const activeSessionRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  await runTransaction(firestore, async (tx) => {
+    const activeSnap = await tx.get(activeSessionRef);
+    if (activeSnap.exists()) {
+      const activeData = activeSnap.data() as ActiveSession;
+      if (activeData.status === 'active') {
+        throw new Error('请先结束当前专注');
+      }
+    }
+
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.data() as UserProfile | undefined;
+    const activeMainCareerId = userData?.activeMainCareerId ?? null;
+    if (!activeMainCareerId) throw new Error('当前没有 active 主线');
+    const careerRef = doc(firestore, 'mainCareers', activeMainCareerId);
+    const careerSnap = await tx.get(careerRef);
+    if (!careerSnap.exists()) throw new Error('主线不存在');
+    tx.update(careerRef, { status: 'archived', archivedAt: serverTimestamp() });
+    const nowKey = getDayKey();
+    tx.set(
+      userRef,
+      {
+        activeMainCareerId: null,
+        totalFocusSec: userData?.totalFocusSec ?? 0,
+        todayFocusSec: userData?.todayFocusSec ?? 0,
+        todayKey: userData?.todayKey ?? nowKey
+      },
+      { merge: true }
+    );
+  });
+}
+
+export async function updateMainCareerTitle(params: { uid: string; mainCareerId: string; title: string }) {
+  const { uid, mainCareerId, title } = params;
+  const trimmedTitle = title.trim();
+  if (trimmedTitle.length < 2 || trimmedTitle.length > 30) {
+    throw new Error('主线名称需为 2~30 个字符');
+  }
+  const careerRef = doc(firestore, 'mainCareers', mainCareerId);
+  const activeSessionRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  await runTransaction(firestore, async (tx) => {
+    const activeSnap = await tx.get(activeSessionRef);
+    if (activeSnap.exists()) {
+      const activeData = activeSnap.data() as ActiveSession;
+      if (activeData.status === 'active') {
+        throw new Error('请先结束当前专注');
+      }
+    }
+
+    const careerSnap = await tx.get(careerRef);
+    if (!careerSnap.exists()) throw new Error('主线不存在');
+    const careerData = careerSnap.data() as MainCareer;
+    if (careerData.user_uid !== uid) throw new Error('无权限操作');
+    if (careerData.status === 'archived') throw new Error('归档主线不可修改');
+
+    tx.update(careerRef, { title: trimmedTitle });
+  });
 }
 
 export function listenActiveSession(uid: string, onChange: (session: ActiveSession | null) => void) {
@@ -61,12 +206,14 @@ export function listenActiveSession(uid: string, onChange: (session: ActiveSessi
 
 export async function startActiveSession(params: {
   uid: string;
-  endeavorId: string;
+  mainCareerId: string;
   deviceId: string;
   durationSec?: number;
 }): Promise<ActiveSession> {
-  const { uid, endeavorId, deviceId, durationSec = DEFAULT_SESSION_SECONDS } = params;
+  const { uid, mainCareerId, deviceId, durationSec = DEFAULT_SESSION_SECONDS } = params;
   const activeRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  const userRef = doc(firestore, 'users', uid);
+  const careerRef = doc(firestore, 'mainCareers', mainCareerId);
   const nowIso = new Date().toISOString();
   await runTransaction(firestore, async (tx) => {
     const existing = await tx.get(activeRef);
@@ -74,8 +221,20 @@ export async function startActiveSession(params: {
     if (existing.exists() && data?.status === 'active') {
       throw new Error('已有 active session 正在运行，拒绝重复开始');
     }
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.data() as UserProfile | undefined;
+    if (!userData?.activeMainCareerId) {
+      throw new Error('请先创建并激活主线');
+    }
+    if (userData.activeMainCareerId !== mainCareerId) {
+      throw new Error('当前主线已变更，请刷新');
+    }
+    const careerSnap = await tx.get(careerRef);
+    if (!careerSnap.exists()) throw new Error('主线不存在');
+    const careerData = careerSnap.data() as MainCareer;
+    if (careerData.status !== 'active') throw new Error('主线未激活');
     tx.set(activeRef, {
-      endeavorId,
+      mainCareerId,
       startAt: nowIso,
       durationSec,
       deviceId,
@@ -83,7 +242,7 @@ export async function startActiveSession(params: {
       status: 'active'
     });
   });
-  return { endeavorId, startAt: nowIso, durationSec, deviceId, heartbeatAt: nowIso, status: 'active' };
+  return { mainCareerId, startAt: nowIso, durationSec, deviceId, heartbeatAt: nowIso, status: 'active' };
 }
 
 export async function heartbeat(uid: string, deviceId: string) {
@@ -107,8 +266,10 @@ export async function endActiveSession(params: {
 }): Promise<{ durationSec: number; sessionId: string } | null> {
   const { uid, deviceId, timeZone } = params;
   const activeRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  const userRef = doc(firestore, 'users', uid);
   const now = new Date();
   const nowIso = now.toISOString();
+  const todayKey = getDayKey(now, timeZone);
   let createdSessionId: string | null = null;
   let capturedDuration = 0;
   await runTransaction(firestore, async (tx) => {
@@ -117,6 +278,15 @@ export async function endActiveSession(params: {
     const data = activeSnap.data() as ActiveSession;
     if (data.status !== 'active') throw new Error('session 已结束');
     if (data.deviceId !== deviceId) throw new Error('session 不属于当前设备');
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.data() as UserProfile | undefined;
+    if (!userData?.activeMainCareerId) throw new Error('当前没有 active 主线');
+    if (userData.activeMainCareerId !== data.mainCareerId) throw new Error('主线已变更，请刷新');
+    const careerRef = doc(firestore, 'mainCareers', data.mainCareerId);
+    const careerSnap = await tx.get(careerRef);
+    if (!careerSnap.exists()) throw new Error('主线不存在');
+    const careerData = careerSnap.data() as MainCareer;
+    if (careerData.status !== 'active') throw new Error('主线未激活');
 
     const startAt = new Date(data.startAt);
     const elapsedSec = Math.max(0, Math.floor((now.getTime() - startAt.getTime()) / 1000));
@@ -126,12 +296,32 @@ export async function endActiveSession(params: {
     createdSessionId = sessionRef.id;
     tx.set(sessionRef, {
       user_uid: uid,
-      endeavorId: data.endeavorId,
+      mainCareerId: data.mainCareerId,
       startAt: data.startAt,
       durationSec: actualDurationSec,
-      dayKey: getDayKey(now, timeZone),
-      createdAt: nowIso
+      dayKey: todayKey,
+      createdAt: serverTimestamp()
     });
+    tx.update(careerRef, {
+      totalFocusSec: increment(actualDurationSec),
+      totalSessions: increment(1)
+    });
+    const nextTodayFocus =
+      userData?.todayKey === todayKey ? (userData?.todayFocusSec ?? 0) + actualDurationSec : actualDurationSec;
+    if (userSnap.exists()) {
+      tx.update(userRef, {
+        totalFocusSec: increment(actualDurationSec),
+        todayFocusSec: nextTodayFocus,
+        todayKey: todayKey
+      });
+    } else {
+      tx.set(userRef, {
+        activeMainCareerId: data.mainCareerId,
+        totalFocusSec: actualDurationSec,
+        todayFocusSec: nextTodayFocus,
+        todayKey: todayKey
+      });
+    }
     tx.update(activeRef, { status: 'ended', heartbeatAt: nowIso });
   });
   if (!createdSessionId) return null;

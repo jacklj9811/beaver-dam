@@ -1,19 +1,31 @@
-export type EndeavorStatus = 'active' | 'archived';
+import type { Timestamp } from 'firebase/firestore';
 
-export interface Endeavor {
+export type MainCareerStatus = 'active' | 'archived';
+
+export interface MainCareer {
   id?: string;
   user_uid: string;
-  name: string;
-  isPrimary: true;
-  status: EndeavorStatus;
-  createdAt: string;
-  updatedAt: string;
+  title: string;
+  status: MainCareerStatus;
+  createdAt: Timestamp;
+  activatedAt: Timestamp;
+  archivedAt?: Timestamp;
+  totalFocusSec: number;
+  totalSessions: number;
+}
+
+export interface UserProfile {
+  id?: string;
+  activeMainCareerId: string | null;
+  totalFocusSec: number;
+  todayFocusSec: number;
+  todayKey: string;
 }
 
 export type ActiveSessionStatus = 'active' | 'ended';
 
 export interface ActiveSession {
-  endeavorId: string;
+  mainCareerId: string;
   startAt: string;
   durationSec: number;
   deviceId: string;
@@ -24,11 +36,11 @@ export interface ActiveSession {
 export interface FocusSession {
   id?: string;
   user_uid: string;
-  endeavorId: string;
+  mainCareerId: string;
   startAt: string;
   durationSec: number;
   dayKey: string;
-  createdAt: string;
+  createdAt: Timestamp;
 }
 
 export interface DailyTotal {

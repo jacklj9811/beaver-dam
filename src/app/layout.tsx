@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Focusline Timer',
-  description: 'Single-track endeavor focus timer'
+  description: 'Single-track main career focus timer'
 };
 
 export default function RootLayout({

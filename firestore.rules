@@ -19,48 +19,49 @@ service cloud.firestore {
 
     allow read, write: if false; // 默认拒绝，具体集合再单独授权
 
-    match /endeavors/{endeavorId} {
-      function validEndeavorCreate() {
+    match /mainCareers/{careerId} {
+      function validCareerPayload() {
         return (
-          hasOnlyAllowedFields(['user_uid', 'name', 'isPrimary', 'status', 'createdAt', 'updatedAt']) &&
+          hasOnlyAllowedFields([
+            'user_uid',
+            'title',
+            'status',
+            'createdAt',
+            'activatedAt',
+            'archivedAt',
+            'totalFocusSec',
+            'totalSessions'
+          ]) &&
           request.resource.data.user_uid is string &&
-          request.resource.data.isPrimary is bool &&
           request.resource.data.status in ['active', 'archived'] &&
-          isNonEmptyString(request.resource.data.name, 200) &&
-          request.resource.data.createdAt is string &&
-          request.resource.data.updatedAt is string
-        );
-      }
-
-      function validEndeavorUpdate() {
-        return (
-          hasOnlyAllowedFields(['user_uid', 'name', 'isPrimary', 'status', 'createdAt', 'updatedAt']) &&
-          request.resource.data.user_uid == resource.data.user_uid &&
-          request.resource.data.isPrimary is bool &&
-          request.resource.data.status in ['active', 'archived'] &&
-          isNonEmptyString(request.resource.data.name, 200) &&
-          request.resource.data.createdAt == resource.data.createdAt &&
-          request.resource.data.createdAt is string &&
-          request.resource.data.updatedAt is string
+          isNonEmptyString(request.resource.data.title, 30) &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.activatedAt is timestamp &&
+          request.resource.data.totalFocusSec is int &&
+          request.resource.data.totalFocusSec >= 0 &&
+          request.resource.data.totalSessions is int &&
+          request.resource.data.totalSessions >= 0 &&
+          (!('archivedAt' in request.resource.data) || request.resource.data.archivedAt is timestamp)
         );
       }
 
       allow get, list: if isOwner(resource.data.user_uid);
-      allow create: if isOwner(request.resource.data.user_uid) && validEndeavorCreate();
-      allow update, delete: if isOwner(resource.data.user_uid) && validEndeavorUpdate();
+      allow create: if isOwner(request.resource.data.user_uid) && validCareerPayload();
+      allow update: if isOwner(resource.data.user_uid) && validCareerPayload();
+      allow delete: if false;
     }
 
     match /sessions/{sessionId} {
       function validSessionCreate() {
         return (
-          hasOnlyAllowedFields(['user_uid', 'endeavorId', 'startAt', 'durationSec', 'dayKey', 'createdAt']) &&
+          hasOnlyAllowedFields(['user_uid', 'mainCareerId', 'startAt', 'durationSec', 'dayKey', 'createdAt']) &&
           request.resource.data.user_uid is string &&
-          request.resource.data.endeavorId is string &&
+          request.resource.data.mainCareerId is string &&
           request.resource.data.startAt is string &&
           request.resource.data.durationSec is int &&
           request.resource.data.durationSec >= 0 &&
           request.resource.data.dayKey is string &&
-          request.resource.data.createdAt is string
+          request.resource.data.createdAt is timestamp
         );
       }
 
@@ -69,11 +70,28 @@ service cloud.firestore {
       allow update, delete: if false; // 会话记录写入后不允许修改/删除
     }
 
+    match /users/{uid} {
+      function validUserPayload() {
+        return (
+          hasOnlyAllowedFields(['activeMainCareerId', 'totalFocusSec', 'todayFocusSec', 'todayKey']) &&
+          (request.resource.data.activeMainCareerId is string || request.resource.data.activeMainCareerId == null) &&
+          request.resource.data.totalFocusSec is int &&
+          request.resource.data.totalFocusSec >= 0 &&
+          request.resource.data.todayFocusSec is int &&
+          request.resource.data.todayFocusSec >= 0 &&
+          request.resource.data.todayKey is string
+        );
+      }
+
+      allow get, list: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validUserPayload();
+    }
+
     match /users/{uid}/active_session/{docId} {
       function validActiveSessionWrite() {
         return (
-          hasOnlyAllowedFields(['endeavorId', 'startAt', 'durationSec', 'deviceId', 'heartbeatAt', 'status']) &&
-          request.resource.data.endeavorId is string &&
+          hasOnlyAllowedFields(['mainCareerId', 'startAt', 'durationSec', 'deviceId', 'heartbeatAt', 'status']) &&
+          request.resource.data.mainCareerId is string &&
           request.resource.data.startAt is string &&
           request.resource.data.durationSec is int &&
           request.resource.data.durationSec >= 0 &&
