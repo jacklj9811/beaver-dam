@@ -100,6 +100,12 @@ export async function activateMainCareer(params: { uid: string; mainCareerId: st
     const userSnap = await tx.get(userRef);
     const userData = userSnap.data() as UserProfile | undefined;
     const existingActiveId = userData?.activeMainCareerId ?? null;
+
+    const targetSnap = await tx.get(targetRef);
+    if (!targetSnap.exists()) throw new Error('目标主线不存在');
+    const targetData = targetSnap.data() as MainCareer;
+    if (targetData.user_uid !== uid) throw new Error('无权限操作');
+
     if (existingActiveId && existingActiveId !== mainCareerId) {
       const oldCareerRef = doc(firestore, 'mainCareers', existingActiveId);
       const oldCareerSnap = await tx.get(oldCareerRef);
@@ -107,11 +113,6 @@ export async function activateMainCareer(params: { uid: string; mainCareerId: st
         tx.update(oldCareerRef, { status: 'archived', archivedAt: serverTimestamp() });
       }
     }
-
-    const targetSnap = await tx.get(targetRef);
-    if (!targetSnap.exists()) throw new Error('目标主线不存在');
-    const targetData = targetSnap.data() as MainCareer;
-    if (targetData.user_uid !== uid) throw new Error('无权限操作');
 
     tx.update(targetRef, {
       status: 'active',
