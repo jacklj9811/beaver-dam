@@ -70,6 +70,62 @@ service cloud.firestore {
       allow update, delete: if false; // 会话记录写入后不允许修改/删除
     }
 
+    match /daily_stats/{statId} {
+      function validDailyStat() {
+        return (
+          hasOnlyAllowedFields(['user_uid', 'dayKey', 'totalFocusSec', 'totalSessions', 'updatedAt']) &&
+          request.resource.data.user_uid is string &&
+          request.resource.data.dayKey is string &&
+          request.resource.data.totalFocusSec is int &&
+          request.resource.data.totalFocusSec >= 0 &&
+          request.resource.data.totalSessions is int &&
+          request.resource.data.totalSessions >= 0 &&
+          request.resource.data.updatedAt is timestamp
+        );
+      }
+
+      allow get, list: if isOwner(resource.data.user_uid);
+      allow create, update: if isOwner(request.resource.data.user_uid) && validDailyStat();
+      allow delete: if false;
+    }
+
+    match /weekly_stats/{statId} {
+      function validWeeklyStat() {
+        return (
+          hasOnlyAllowedFields(['user_uid', 'weekKey', 'totalFocusSec', 'totalSessions', 'updatedAt']) &&
+          request.resource.data.user_uid is string &&
+          request.resource.data.weekKey is string &&
+          request.resource.data.totalFocusSec is int &&
+          request.resource.data.totalFocusSec >= 0 &&
+          request.resource.data.totalSessions is int &&
+          request.resource.data.totalSessions >= 0 &&
+          request.resource.data.updatedAt is timestamp
+        );
+      }
+
+      allow get, list: if isOwner(resource.data.user_uid);
+      allow create, update: if isOwner(request.resource.data.user_uid) && validWeeklyStat();
+      allow delete: if false;
+    }
+
+    match /global_stats/{uid} {
+      function validGlobalStat() {
+        return (
+          hasOnlyAllowedFields(['user_uid', 'totalFocusSec', 'totalSessions', 'updatedAt']) &&
+          request.resource.data.user_uid is string &&
+          request.resource.data.totalFocusSec is int &&
+          request.resource.data.totalFocusSec >= 0 &&
+          request.resource.data.totalSessions is int &&
+          request.resource.data.totalSessions >= 0 &&
+          request.resource.data.updatedAt is timestamp
+        );
+      }
+
+      allow get, list: if isOwner(resource.data.user_uid);
+      allow create, update: if isOwner(request.resource.data.user_uid) && validGlobalStat();
+      allow delete: if false;
+    }
+
     match /users/{uid} {
       function validUserPayload() {
         return (
