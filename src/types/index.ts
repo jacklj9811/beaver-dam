@@ -43,7 +43,28 @@ export interface FocusSession {
   createdAt: Timestamp;
 }
 
-export interface DailyTotal {
+export interface DailyStat {
+  id?: string;
+  user_uid: string;
   dayKey: string;
-  totalSec: number;
+  totalFocusSec: number;
+  totalSessions: number;
+  updatedAt: Timestamp;
+}
+
+export interface WeeklyStat {
+  id?: string;
+  user_uid: string;
+  weekKey: string;
+  totalFocusSec: number;
+  totalSessions: number;
+  updatedAt: Timestamp;
+}
+
+export interface GlobalStat {
+  id?: string;
+  user_uid: string;
+  totalFocusSec: number;
+  totalSessions: number;
+  updatedAt: Timestamp;
 }

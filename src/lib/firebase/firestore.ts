@@ -13,8 +13,8 @@ import {
   deleteField
 } from 'firebase/firestore';
 import { firestore } from './client';
-import { DEFAULT_SESSION_SECONDS, getDayKey } from '../time';
-import type { ActiveSession, DailyTotal, FocusSession, MainCareer, UserProfile } from '@/types';
+import { DEFAULT_SESSION_SECONDS, getDayKey, getWeekKey } from '../time';
+import type { ActiveSession, DailyStat, FocusSession, GlobalStat, MainCareer, UserProfile, WeeklyStat } from '@/types';
 
 export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
   const userRef = doc(firestore, 'users', uid);
@@ -271,6 +271,7 @@ export async function endActiveSession(params: {
   const now = new Date();
   const nowIso = now.toISOString();
   const todayKey = getDayKey(now, timeZone);
+  const weekKey = getWeekKey(now, timeZone);
   let createdSessionId: string | null = null;
   let capturedDuration = 0;
   await runTransaction(firestore, async (tx) => {
@@ -303,6 +304,41 @@ export async function endActiveSession(params: {
       dayKey: todayKey,
       createdAt: serverTimestamp()
     });
+    const dailyRef = doc(firestore, 'daily_stats', `${uid}_${todayKey}`);
+    tx.set(
+      dailyRef,
+      {
+        user_uid: uid,
+        dayKey: todayKey,
+        totalFocusSec: increment(actualDurationSec),
+        totalSessions: increment(1),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+    const weeklyRef = doc(firestore, 'weekly_stats', `${uid}_${weekKey}`);
+    tx.set(
+      weeklyRef,
+      {
+        user_uid: uid,
+        weekKey: weekKey,
+        totalFocusSec: increment(actualDurationSec),
+        totalSessions: increment(1),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+    const globalRef = doc(firestore, 'global_stats', uid);
+    tx.set(
+      globalRef,
+      {
+        user_uid: uid,
+        totalFocusSec: increment(actualDurationSec),
+        totalSessions: increment(1),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
     tx.update(careerRef, {
       totalFocusSec: increment(actualDurationSec),
       totalSessions: increment(1)
@@ -352,26 +388,46 @@ export async function queryDailyTotals(params: {
   uid: string;
   lastNDays?: number;
   timeZone?: string;
-}): Promise<DailyTotal[]> {
+}): Promise<DailyStat[]> {
   const { uid, lastNDays = 14, timeZone } = params;
   const startDate = new Date();
   startDate.setHours(0, 0, 0, 0);
   startDate.setDate(startDate.getDate() - (lastNDays - 1));
-  const sessionsRef = collection(firestore, 'sessions');
-  const sessionsQuery = query(
-    sessionsRef,
+  const startKey = getDayKey(startDate, timeZone);
+  const statsRef = collection(firestore, 'daily_stats');
+  const statsQuery = query(
+    statsRef,
     where('user_uid', '==', uid),
-    where('startAt', '>=', startDate.toISOString()),
-    orderBy('startAt', 'desc')
+    where('dayKey', '>=', startKey),
+    orderBy('dayKey', 'desc')
   );
-  const snapshot = await getDocs(sessionsQuery);
-  const totals = new Map<string, number>();
-  snapshot.docs.forEach((docSnap) => {
-    const data = docSnap.data() as FocusSession;
-    const key = getDayKey(new Date(data.startAt), timeZone);
-    totals.set(key, (totals.get(key) ?? 0) + data.durationSec);
-  });
-  return Array.from(totals.entries())
-    .map(([day, totalSec]) => ({ dayKey: day, totalSec }))
+  const snapshot = await getDocs(statsQuery);
+  return snapshot.docs
+    .map((docSnap) => ({ ...(docSnap.data() as DailyStat), id: docSnap.id }))
     .sort((a, b) => (a.dayKey < b.dayKey ? -1 : 1));
+}
+
+export async function queryWeeklyStats(params: { uid: string; lastNWeeks?: number }): Promise<WeeklyStat[]> {
+  const { uid, lastNWeeks = 6 } = params;
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - (lastNWeeks - 1) * 7);
+  const startWeekKey = getWeekKey(startDate);
+  const statsRef = collection(firestore, 'weekly_stats');
+  const statsQuery = query(
+    statsRef,
+    where('user_uid', '==', uid),
+    where('weekKey', '>=', startWeekKey),
+    orderBy('weekKey', 'desc')
+  );
+  const snapshot = await getDocs(statsQuery);
+  return snapshot.docs
+    .map((docSnap) => ({ ...(docSnap.data() as WeeklyStat), id: docSnap.id }))
+    .sort((a, b) => (a.weekKey < b.weekKey ? -1 : 1));
+}
+
+export async function fetchGlobalStats(uid: string): Promise<GlobalStat | null> {
+  const globalRef = doc(firestore, 'global_stats', uid);
+  const snap = await getDoc(globalRef);
+  if (!snap.exists()) return null;
+  return { ...(snap.data() as GlobalStat), id: snap.id };
 }

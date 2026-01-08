@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import AccumulationBar from '@/components/AccumulationBar';
+import StatProgressBar from '@/components/StatProgressBar';
 import {
   linkGuestWithEmail,
   listenAuthState,
@@ -16,19 +17,21 @@ import {
   archiveActiveMainCareer,
   createAndActivateMainCareer,
   endActiveSession,
+  fetchGlobalStats,
   fetchUserProfile,
   heartbeat,
   listenActiveSession,
   listMainCareers,
   queryAllSessions,
   queryDailyTotals,
+  queryWeeklyStats,
   startActiveSession,
   updateMainCareerTitle
 } from '@/lib/firebase/firestore';
 import { getOrCreateDeviceId } from '@/lib/device/deviceId';
-import { DEFAULT_SESSION_SECONDS, formatDuration, getDayKey } from '@/lib/time';
+import { DEFAULT_SESSION_SECONDS, formatDuration, getDayKey, getWeekKey } from '@/lib/time';
 import { computeAvgDailySec, findMilestone, formatEtaDays } from '@/lib/core/milestones';
-import type { ActiveSession, DailyTotal, FocusSession, MainCareer, UserProfile } from '@/types';
+import type { ActiveSession, DailyStat, FocusSession, GlobalStat, MainCareer, UserProfile, WeeklyStat } from '@/types';
 import type { Timestamp } from 'firebase/firestore';
 
 function formatHoursMinutes(totalSec: number) {
@@ -54,7 +57,9 @@ export default function Home() {
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [remainingSec, setRemainingSec] = useState(DEFAULT_SESSION_SECONDS);
   const [allSessions, setAllSessions] = useState<FocusSession[]>([]);
-  const [dailyTotals, setDailyTotals] = useState<DailyTotal[]>([]);
+  const [dailyTotals, setDailyTotals] = useState<DailyStat[]>([]);
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
+  const [globalStats, setGlobalStats] = useState<GlobalStat | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [nameStatus, setNameStatus] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
   const [savingName, setSavingName] = useState(false);
@@ -76,9 +81,16 @@ export default function Home() {
 
   const refreshSessions = useCallback(async () => {
     if (!uid) return;
-    const [sessions, totals] = await Promise.all([queryAllSessions(uid), queryDailyTotals({ uid })]);
+    const [sessions, totals, weeks, global] = await Promise.all([
+      queryAllSessions(uid),
+      queryDailyTotals({ uid }),
+      queryWeeklyStats({ uid }),
+      fetchGlobalStats(uid)
+    ]);
     setAllSessions(sessions);
     setDailyTotals(totals);
+    setWeeklyStats(weeks);
+    setGlobalStats(global);
   }, [uid]);
 
   const refreshMainCareers = useCallback(async () => {
@@ -98,6 +110,8 @@ export default function Home() {
         setNewCareerName('');
         setAllSessions([]);
         setDailyTotals([]);
+        setWeeklyStats([]);
+        setGlobalStats(null);
         setActiveSession(null);
         setDataLoading(false);
         return;
@@ -233,15 +247,30 @@ export default function Home() {
   };
 
   const todayKey = getDayKey();
+  const todayStat = dailyTotals.find((stat) => stat.dayKey === todayKey);
   const todayTotalSec =
-    userProfile?.todayKey === todayKey
-      ? userProfile?.todayFocusSec ?? 0
-      : dailyTotals.find((d) => d.dayKey === todayKey)?.totalSec ?? 0;
-  const totalFocusSec = userProfile?.totalFocusSec ?? allSessions.reduce((acc, cur) => acc + cur.durationSec, 0);
+    todayStat?.totalFocusSec ??
+    (userProfile?.todayKey === todayKey ? userProfile?.todayFocusSec ?? 0 : 0);
+  const totalFocusSec =
+    globalStats?.totalFocusSec ?? userProfile?.totalFocusSec ?? allSessions.reduce((acc, cur) => acc + cur.durationSec, 0);
   const milestoneInfo = findMilestone(totalFocusSec);
-  const avgDailySec = computeAvgDailySec(dailyTotals, 14);
+  const avgDailySec = computeAvgDailySec(
+    dailyTotals.map((stat) => ({ dayKey: stat.dayKey, totalSec: stat.totalFocusSec })),
+    14
+  );
   const etaText = formatEtaDays(milestoneInfo.remainingSec, avgDailySec);
   const focusPercent = todayTotalSec / 86400;
+
+  const weekKey = getWeekKey();
+  const currentWeekStat = weeklyStats.find((stat) => stat.weekKey === weekKey);
+  const currentWeekSec = currentWeekStat?.totalFocusSec ?? 0;
+  const previousWeeks = weeklyStats.filter((stat) => stat.weekKey !== weekKey).slice(-4);
+  const averagePrevWeekSec =
+    previousWeeks.length > 0
+      ? previousWeeks.reduce((acc, stat) => acc + stat.totalFocusSec, 0) / previousWeeks.length
+      : 0;
+  const weeklyTargetSec = averagePrevWeekSec > 0 ? averagePrevWeekSec : Math.max(currentWeekSec, 0);
+  const weeklyPercent = weeklyTargetSec > 0 ? (currentWeekSec / weeklyTargetSec) * 100 : 0;
 
   const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
   const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
@@ -570,13 +599,38 @@ export default function Home() {
                 <p className="text-slate-400 text-sm mt-1">ETA: {milestoneInfo.nextMilestone ? etaText : 'N/A'}</p>
               </div>
             </div>
-            <AccumulationBar
-              totalFocusSec={totalFocusSec}
-              nextMilestoneHour={milestoneInfo.nextMilestone}
-              prevMilestoneHour={milestoneInfo.prevMilestone}
-              zoomLevel={zoomLevel}
-              onZoomChange={setZoomLevel}
-            />
+            <div className="grid gap-4 mt-4 lg:grid-cols-3">
+              <StatProgressBar
+                title="今日进度条"
+                description="统计含义：今日专注时长 / 24 小时"
+                valueLabel={`${formatDuration(todayTotalSec)} / 24:00:00`}
+                percent={focusPercent * 100}
+                note="数据来源：daily_stats"
+              />
+              <StatProgressBar
+                title="趋势进度条"
+                description={
+                  averagePrevWeekSec > 0
+                    ? '统计含义：本周累计 / 近 4 周平均'
+                    : '统计含义：本周累计（暂无历史周均）'
+                }
+                valueLabel={`${formatDuration(currentWeekSec)} / ${formatDuration(weeklyTargetSec)}`}
+                percent={weeklyPercent}
+                note="数据来源：weekly_stats"
+              />
+              <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700 space-y-2">
+                <p className="text-slate-300 text-sm">主线进度条</p>
+                <p className="text-slate-400 text-xs">统计含义：累计专注时长 / 下一里程碑</p>
+                <AccumulationBar
+                  totalFocusSec={totalFocusSec}
+                  nextMilestoneHour={milestoneInfo.nextMilestone}
+                  prevMilestoneHour={milestoneInfo.prevMilestone}
+                  zoomLevel={zoomLevel}
+                  onZoomChange={setZoomLevel}
+                />
+                <p className="text-slate-500 text-xs">数据来源：global_stats</p>
+              </div>
+            </div>
           </section>
         </>
       )}
