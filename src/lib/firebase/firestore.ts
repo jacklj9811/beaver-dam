@@ -57,7 +57,7 @@ export async function createAndActivateMainCareer(params: { uid: string; title: 
       const oldCareerRef = doc(firestore, 'mainCareers', existingActiveId);
       const oldCareerSnap = await tx.get(oldCareerRef);
       if (oldCareerSnap.exists()) {
-        tx.update(oldCareerRef, { status: 'archived', archivedAt: Timestamp.now() });
+        tx.update(oldCareerRef, { status: 'archived', archivedAt: nowTimestamp });
       }
     }
 
@@ -88,6 +88,7 @@ export async function activateMainCareer(params: { uid: string; mainCareerId: st
   const userRef = doc(firestore, 'users', uid);
   const targetRef = doc(firestore, 'mainCareers', mainCareerId);
   const activeSessionRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  const nowTimestamp = Timestamp.now();
   await runTransaction(firestore, async (tx) => {
     const activeSnap = await tx.get(activeSessionRef);
     if (activeSnap.exists()) {
@@ -110,13 +111,13 @@ export async function activateMainCareer(params: { uid: string; mainCareerId: st
       const oldCareerRef = doc(firestore, 'mainCareers', existingActiveId);
       const oldCareerSnap = await tx.get(oldCareerRef);
       if (oldCareerSnap.exists()) {
-        tx.update(oldCareerRef, { status: 'archived', archivedAt: Timestamp.now() });
+        tx.update(oldCareerRef, { status: 'archived', archivedAt: nowTimestamp });
       }
     }
 
     tx.update(targetRef, {
       status: 'active',
-      activatedAt: Timestamp.now(),
+      activatedAt: nowTimestamp,
       archivedAt: deleteField()
     });
     const nowKey = getDayKey();
@@ -136,6 +137,7 @@ export async function activateMainCareer(params: { uid: string; mainCareerId: st
 export async function archiveActiveMainCareer(uid: string) {
   const userRef = doc(firestore, 'users', uid);
   const activeSessionRef = doc(firestore, 'users', uid, 'active_session', 'current');
+  const nowTimestamp = Timestamp.now();
   await runTransaction(firestore, async (tx) => {
     const activeSnap = await tx.get(activeSessionRef);
     if (activeSnap.exists()) {
@@ -152,7 +154,7 @@ export async function archiveActiveMainCareer(uid: string) {
     const careerRef = doc(firestore, 'mainCareers', activeMainCareerId);
     const careerSnap = await tx.get(careerRef);
     if (!careerSnap.exists()) throw new Error('主线不存在');
-    tx.update(careerRef, { status: 'archived', archivedAt: Timestamp.now() });
+    tx.update(careerRef, { status: 'archived', archivedAt: nowTimestamp });
     const nowKey = getDayKey();
     tx.set(
       userRef,
