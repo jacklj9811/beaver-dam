@@ -7,10 +7,9 @@ import {
   orderBy,
   query,
   runTransaction,
-  serverTimestamp,
   where,
-  increment,
-  deleteField
+  deleteField,
+  Timestamp
 } from 'firebase/firestore';
 import { firestore } from './client';
 import { DEFAULT_SESSION_SECONDS, getDayKey, getWeekKey } from '../time';
@@ -41,6 +40,7 @@ export async function createAndActivateMainCareer(params: { uid: string; title: 
   const userRef = doc(firestore, 'users', uid);
   const activeSessionRef = doc(firestore, 'users', uid, 'active_session', 'current');
   const nowKey = getDayKey();
+  const nowTimestamp = Timestamp.now();
   await runTransaction(firestore, async (tx) => {
     const activeSnap = await tx.get(activeSessionRef);
     if (activeSnap.exists()) {
@@ -57,7 +57,7 @@ export async function createAndActivateMainCareer(params: { uid: string; title: 
       const oldCareerRef = doc(firestore, 'mainCareers', existingActiveId);
       const oldCareerSnap = await tx.get(oldCareerRef);
       if (oldCareerSnap.exists()) {
-        tx.update(oldCareerRef, { status: 'archived', archivedAt: serverTimestamp() });
+        tx.update(oldCareerRef, { status: 'archived', archivedAt: Timestamp.now() });
       }
     }
 
@@ -65,8 +65,8 @@ export async function createAndActivateMainCareer(params: { uid: string; title: 
       user_uid: uid,
       title: trimmedTitle,
       status: 'active',
-      createdAt: serverTimestamp(),
-      activatedAt: serverTimestamp(),
+      createdAt: nowTimestamp,
+      activatedAt: nowTimestamp,
       totalFocusSec: 0,
       totalSessions: 0
     });
@@ -110,13 +110,13 @@ export async function activateMainCareer(params: { uid: string; mainCareerId: st
       const oldCareerRef = doc(firestore, 'mainCareers', existingActiveId);
       const oldCareerSnap = await tx.get(oldCareerRef);
       if (oldCareerSnap.exists()) {
-        tx.update(oldCareerRef, { status: 'archived', archivedAt: serverTimestamp() });
+        tx.update(oldCareerRef, { status: 'archived', archivedAt: Timestamp.now() });
       }
     }
 
     tx.update(targetRef, {
       status: 'active',
-      activatedAt: serverTimestamp(),
+      activatedAt: Timestamp.now(),
       archivedAt: deleteField()
     });
     const nowKey = getDayKey();
@@ -152,7 +152,7 @@ export async function archiveActiveMainCareer(uid: string) {
     const careerRef = doc(firestore, 'mainCareers', activeMainCareerId);
     const careerSnap = await tx.get(careerRef);
     if (!careerSnap.exists()) throw new Error('主线不存在');
-    tx.update(careerRef, { status: 'archived', archivedAt: serverTimestamp() });
+    tx.update(careerRef, { status: 'archived', archivedAt: Timestamp.now() });
     const nowKey = getDayKey();
     tx.set(
       userRef,
@@ -270,6 +270,7 @@ export async function endActiveSession(params: {
   const userRef = doc(firestore, 'users', uid);
   const now = new Date();
   const nowIso = now.toISOString();
+  const nowTimestamp = Timestamp.fromDate(now);
   const todayKey = getDayKey(now, timeZone);
   const weekKey = getWeekKey(now, timeZone);
   let createdSessionId: string | null = null;
@@ -302,59 +303,74 @@ export async function endActiveSession(params: {
       startAt: data.startAt,
       durationSec: actualDurationSec,
       dayKey: todayKey,
-      createdAt: serverTimestamp()
+      createdAt: nowTimestamp
     });
     const dailyRef = doc(firestore, 'daily_stats', `${uid}_${todayKey}`);
+    const dailySnap = await tx.get(dailyRef);
+    const dailyData = dailySnap.data() as DailyStat | undefined;
+    const nextDailyFocus = (dailyData?.totalFocusSec ?? 0) + actualDurationSec;
+    const nextDailySessions = (dailyData?.totalSessions ?? 0) + 1;
     tx.set(
       dailyRef,
       {
         user_uid: uid,
         dayKey: todayKey,
-        totalFocusSec: increment(actualDurationSec),
-        totalSessions: increment(1),
-        updatedAt: serverTimestamp()
+        totalFocusSec: nextDailyFocus,
+        totalSessions: nextDailySessions,
+        updatedAt: nowTimestamp
       },
       { merge: true }
     );
     const weeklyRef = doc(firestore, 'weekly_stats', `${uid}_${weekKey}`);
+    const weeklySnap = await tx.get(weeklyRef);
+    const weeklyData = weeklySnap.data() as WeeklyStat | undefined;
+    const nextWeeklyFocus = (weeklyData?.totalFocusSec ?? 0) + actualDurationSec;
+    const nextWeeklySessions = (weeklyData?.totalSessions ?? 0) + 1;
     tx.set(
       weeklyRef,
       {
         user_uid: uid,
         weekKey: weekKey,
-        totalFocusSec: increment(actualDurationSec),
-        totalSessions: increment(1),
-        updatedAt: serverTimestamp()
+        totalFocusSec: nextWeeklyFocus,
+        totalSessions: nextWeeklySessions,
+        updatedAt: nowTimestamp
       },
       { merge: true }
     );
     const globalRef = doc(firestore, 'global_stats', uid);
+    const globalSnap = await tx.get(globalRef);
+    const globalData = globalSnap.data() as GlobalStat | undefined;
+    const nextGlobalFocus = (globalData?.totalFocusSec ?? 0) + actualDurationSec;
+    const nextGlobalSessions = (globalData?.totalSessions ?? 0) + 1;
     tx.set(
       globalRef,
       {
         user_uid: uid,
-        totalFocusSec: increment(actualDurationSec),
-        totalSessions: increment(1),
-        updatedAt: serverTimestamp()
+        totalFocusSec: nextGlobalFocus,
+        totalSessions: nextGlobalSessions,
+        updatedAt: nowTimestamp
       },
       { merge: true }
     );
+    const nextCareerFocus = (careerData.totalFocusSec ?? 0) + actualDurationSec;
+    const nextCareerSessions = (careerData.totalSessions ?? 0) + 1;
     tx.update(careerRef, {
-      totalFocusSec: increment(actualDurationSec),
-      totalSessions: increment(1)
+      totalFocusSec: nextCareerFocus,
+      totalSessions: nextCareerSessions
     });
     const nextTodayFocus =
       userData?.todayKey === todayKey ? (userData?.todayFocusSec ?? 0) + actualDurationSec : actualDurationSec;
+    const nextUserTotalFocus = (userData?.totalFocusSec ?? 0) + actualDurationSec;
     if (userSnap.exists()) {
       tx.update(userRef, {
-        totalFocusSec: increment(actualDurationSec),
+        totalFocusSec: nextUserTotalFocus,
         todayFocusSec: nextTodayFocus,
         todayKey: todayKey
       });
     } else {
       tx.set(userRef, {
         activeMainCareerId: data.mainCareerId,
-        totalFocusSec: actualDurationSec,
+        totalFocusSec: nextUserTotalFocus,
         todayFocusSec: nextTodayFocus,
         todayKey: todayKey
       });
