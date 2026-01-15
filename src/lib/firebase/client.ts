@@ -1,3 +1,5 @@
+'use client';
+
 import { initializeApp, getApps, type FirebaseOptions } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
@@ -39,18 +41,22 @@ export const firebaseApp =
 export const firestore = getFirestore(firebaseApp);
 export const firebaseAuth = getAuth(firebaseApp);
 
-if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+const useEmulators = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
+
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && useEmulators) {
   const globalKey = '__FIREBASE_EMULATORS_CONNECTED__';
   const globalStore = globalThis as typeof globalThis & { [key: string]: boolean | undefined };
 
   if (!globalStore[globalKey]) {
     const firestoreHost = process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST ?? 'localhost';
     const firestorePort = Number(process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_PORT ?? '8080');
-    const authHost = process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST ?? 'localhost';
-    const authPort = Number(process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_PORT ?? '9099');
+    const authHostPort =
+      process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOSTPORT ??
+      process.env.FIREBASE_AUTH_EMULATOR_HOST ??
+      'localhost:9099';
 
     connectFirestoreEmulator(firestore, firestoreHost, firestorePort);
-    connectAuthEmulator(firebaseAuth, `http://${authHost}:${authPort}`, {
+    connectAuthEmulator(firebaseAuth, `http://${authHostPort}`, {
       disableWarnings: true
     });
 
