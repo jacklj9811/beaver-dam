@@ -1,6 +1,6 @@
 import { initializeApp, getApps, type FirebaseOptions } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
 type FirebaseConfigKeys =
   | 'apiKey'
@@ -38,3 +38,22 @@ export const firebaseApp =
   getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const firestore = getFirestore(firebaseApp);
 export const firebaseAuth = getAuth(firebaseApp);
+
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+  const globalKey = '__FIREBASE_EMULATORS_CONNECTED__';
+  const globalStore = globalThis as typeof globalThis & { [key: string]: boolean | undefined };
+
+  if (!globalStore[globalKey]) {
+    const firestoreHost = process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST ?? 'localhost';
+    const firestorePort = Number(process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_PORT ?? '8080');
+    const authHost = process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST ?? 'localhost';
+    const authPort = Number(process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_PORT ?? '9099');
+
+    connectFirestoreEmulator(firestore, firestoreHost, firestorePort);
+    connectAuthEmulator(firebaseAuth, `http://${authHost}:${authPort}`, {
+      disableWarnings: true
+    });
+
+    globalStore[globalKey] = true;
+  }
+}
