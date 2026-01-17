@@ -45,7 +45,7 @@ service cloud.firestore {
         );
       }
 
-      allow get, list: if isOwner(resource.data.user_uid);
+      allow get, list: if resource != null && isOwner(resource.data.user_uid);
       allow create: if isOwner(request.resource.data.user_uid) && validCareerPayload();
       allow update: if isOwner(resource.data.user_uid) && validCareerPayload();
       allow delete: if false;
@@ -65,7 +65,7 @@ service cloud.firestore {
         );
       }
 
-      allow get, list: if isOwner(resource.data.user_uid);
+      allow get, list: if resource != null && isOwner(resource.data.user_uid);
       allow create: if isOwner(request.resource.data.user_uid) && validSessionCreate();
       allow update, delete: if false; // 会话记录写入后不允许修改/删除
     }
@@ -121,7 +121,7 @@ service cloud.firestore {
         );
       }
 
-      allow get, list: if isOwner(resource.data.user_uid);
+      allow get, list: if resource != null && isOwner(resource.data.user_uid);
       allow create, update: if isOwner(request.resource.data.user_uid) && validGlobalStat();
       allow delete: if false;
     }
