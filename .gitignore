@@ -11,3 +11,5 @@ pnpm-debug.log*
 firestore-debug.log
 .firebase/
 .cache/
+.emulator-data/
+scripts/emu.local.ps1
