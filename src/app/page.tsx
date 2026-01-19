@@ -5,7 +5,6 @@ import type { User } from 'firebase/auth';
 import AccumulationBar from '@/components/AccumulationBar';
 import StatProgressBar from '@/components/StatProgressBar';
 import {
-  linkGuestWithEmail,
   listenAuthState,
   registerWithEmail,
   signInAsGuest,
@@ -38,6 +37,154 @@ function formatHoursMinutes(totalSec: number) {
   const hours = Math.floor(totalSec / 3600);
   const minutes = Math.floor((totalSec % 3600) / 60);
   return `${hours} 小时 ${minutes} 分钟`;
+}
+
+type LoginPageProps = {
+  authMode: 'signin' | 'signup';
+  email: string;
+  password: string;
+  authBusy: boolean;
+  authStatus: string | null;
+  onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onToggleMode: () => void;
+  onEmailAuth: () => void;
+  onGuestLogin: () => void;
+};
+
+function LoginPage({
+  authMode,
+  email,
+  password,
+  authBusy,
+  authStatus,
+  onEmailChange,
+  onPasswordChange,
+  onToggleMode,
+  onEmailAuth,
+  onGuestLogin
+}: LoginPageProps) {
+  return (
+    <main className="min-h-screen flex items-center justify-center px-4 py-10">
+      <section className="section-card w-full max-w-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-100">欢迎回来</h1>
+            <p className="text-sm text-slate-400 mt-1">登录后即可同步主线与专注记录。</p>
+          </div>
+          <div className="inline-flex rounded-full border border-slate-700 bg-slate-900/80 p-1 text-xs">
+            <button
+              className={`px-3 py-1 rounded-full transition ${
+                authMode === 'signin' ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              onClick={() => authMode === 'signup' && onToggleMode()}
+              type="button"
+            >
+              登录
+            </button>
+            <button
+              className={`px-3 py-1 rounded-full transition ${
+                authMode === 'signup' ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              onClick={() => authMode === 'signin' && onToggleMode()}
+              type="button"
+            >
+              注册
+            </button>
+          </div>
+        </div>
+
+        {authStatus && <p className="text-amber-300 text-sm mt-3 break-all">{authStatus}</p>}
+
+        <div className="mt-5 grid gap-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm text-slate-300">邮箱</label>
+            <input
+              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => onEmailChange(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm text-slate-300">密码</label>
+            <input
+              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+              type="password"
+              placeholder="不少于 6 位"
+              value={password}
+              onChange={(e) => onPasswordChange(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3">
+          <button className="button-primary w-full" onClick={onEmailAuth} disabled={authBusy}>
+            {authMode === 'signin' ? '邮箱登录' : '注册并登录'}
+          </button>
+          <button
+            className="text-sm text-sky-300 hover:text-sky-200 transition self-start"
+            onClick={onToggleMode}
+            type="button"
+          >
+            {authMode === 'signin' ? '没有账号？去注册' : '已有账号？去登录'}
+          </button>
+        </div>
+
+        <details className="mt-5">
+          <summary className="cursor-pointer text-sm text-slate-400">更多选项（可折叠）</summary>
+          <div className="mt-3 space-y-3">
+            <button
+              className="px-4 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition w-full"
+              onClick={onGuestLogin}
+              disabled={authBusy}
+              type="button"
+            >
+              使用匿名身份
+            </button>
+            <p className="text-xs text-slate-500">
+              匿名登录适合快速试用，建议后续注册邮箱账号以便跨设备同步。
+            </p>
+          </div>
+        </details>
+      </section>
+    </main>
+  );
+}
+
+type AccountMenuProps = {
+  authUser: User | null;
+  authBusy: boolean;
+  onSignOut: () => void;
+};
+
+function AccountMenu({ authUser, authBusy, onSignOut }: AccountMenuProps) {
+  return (
+    <div className="flex justify-end">
+      <details className="relative">
+        <summary className="list-none cursor-pointer px-3 py-2 rounded-lg border border-slate-800 bg-slate-900/60 text-sm text-slate-200 hover:border-slate-700 transition">
+          {authUser?.email ?? '匿名用户'}
+          {authUser?.isAnonymous && <span className="ml-2 text-xs text-slate-400">(匿名)</span>}
+        </summary>
+        <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-800 bg-slate-900 shadow-lg p-3">
+          <p className="text-xs text-slate-400">当前账号</p>
+          <p className="text-sm text-slate-200 mt-1 break-all">
+            {authUser?.email ?? '匿名用户'}
+            {authUser?.isAnonymous && '（匿名）'}
+          </p>
+          <button
+            className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
+            onClick={onSignOut}
+            disabled={authBusy}
+            type="button"
+          >
+            退出登录
+          </button>
+        </div>
+      </details>
+    </div>
+  );
 }
 
 export default function Home() {
@@ -299,10 +446,7 @@ export default function Home() {
     setAuthStatus(null);
     setAuthBusy(true);
     try {
-      if (authUser?.isAnonymous) {
-        await linkGuestWithEmail(email, password);
-        setAuthStatus('已升级为邮箱账号');
-      } else if (authMode === 'signin') {
+      if (authMode === 'signin') {
         await signInWithEmail(email, password);
         setAuthStatus('登录成功');
       } else {
@@ -315,8 +459,6 @@ export default function Home() {
       setAuthBusy(false);
     }
   };
-
-  const isAnonymousUser = authUser?.isAnonymous;
 
   const handleGuestLogin = async () => {
     setAuthStatus(null);
@@ -344,296 +486,239 @@ export default function Home() {
     }
   };
 
+  if (!authReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4 py-10">
+        <p className="text-slate-400">正在检查登录状态...</p>
+      </main>
+    );
+  }
+
+  if (!uid) {
+    return (
+      <LoginPage
+        authMode={authMode}
+        email={email}
+        password={password}
+        authBusy={authBusy}
+        authStatus={authStatus}
+        onEmailChange={setEmail}
+        onPasswordChange={setPassword}
+        onToggleMode={() => setAuthMode((prev) => (prev === 'signin' ? 'signup' : 'signin'))}
+        onEmailAuth={handleEmailAuth}
+        onGuestLogin={handleGuestLogin}
+      />
+    );
+  }
+
   return (
     <main className="layout-grid">
-      <section className="section-card">
-        <div className="section-title">账号登录</div>
-        <p className="text-sm text-slate-400 mb-3">使用邮箱密码可以在不同设备之间同步数据，匿名登录适合快速试用。</p>
-        {authStatus && <p className="text-amber-300 text-sm mb-2 break-all">{authStatus}</p>}
-        {!authReady ? (
-          <p className="text-slate-400">正在检查登录状态...</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm text-slate-300">邮箱</label>
-                <input
-                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm text-slate-300">密码</label>
-                <input
-                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
-                  type="password"
-                  placeholder="不少于 6 位"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <button className="button-primary" onClick={handleEmailAuth} disabled={authBusy}>
-                {isAnonymousUser ? '升级为邮箱账号' : authMode === 'signin' ? '邮箱登录' : '注册并登录'}
-              </button>
-              {!isAnonymousUser && (
-                <button
-                  className="px-4 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
-                  onClick={() => setAuthMode((prev) => (prev === 'signin' ? 'signup' : 'signin'))}
-                  disabled={authBusy}
-                >
-                  {authMode === 'signin' ? '切换到注册' : '已有账号，去登录'}
-                </button>
-              )}
+      <AccountMenu authUser={authUser} authBusy={authBusy} onSignOut={handleSignOut} />
+      <header className="section-card">
+        <p className="text-sm text-slate-300">主线事业</p>
+        {status && <p className="text-amber-300 text-sm mt-2 break-all">{status}</p>}
+        <div className="grid gap-4 mt-3">
+          <div className="flex flex-col gap-2">
+            <p className="text-slate-300 text-sm">当前主线</p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 w-full sm:w-auto disabled:opacity-60"
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onBlur={handleRename}
+                placeholder={activeMainCareer ? '输入主线名称' : '请先创建主线'}
+                disabled={!activeMainCareer || activeMainCareer.status === 'archived' || isAnySessionActive}
+              />
               <button
-                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
-                onClick={handleGuestLogin}
-                disabled={authBusy}
+                className="button-primary sm:w-auto"
+                onClick={handleRename}
+                disabled={!activeMainCareer || savingName || activeMainCareer.status === 'archived' || isAnySessionActive}
               >
-                使用匿名身份
+                保存名称
               </button>
-              {uid && (
-                <button
-                  className="px-4 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
-                  onClick={handleSignOut}
-                  disabled={authBusy}
-                >
-                  退出登录
-                </button>
-              )}
+              <button
+                className="px-4 py-2 rounded-lg border border-rose-400/60 text-rose-200 hover:border-rose-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleArchiveCareer}
+                disabled={!activeMainCareer || activeMainCareer.status !== 'active' || isAnySessionActive}
+              >
+                归档当前主线
+              </button>
             </div>
-            <div className="mt-3 text-sm text-slate-300">
-              {uid ? (
-                <p>
-                  当前账号：{authUser?.email ?? '匿名用户'} {authUser?.isAnonymous && '(匿名)'}
-                </p>
-              ) : (
-                <p>当前未登录，请先选择登录方式。</p>
-              )}
+            {activeMainCareer ? (
+              <p className="text-slate-400 text-sm">
+                状态：{activeMainCareer.status === 'active' ? 'Active' : 'Archived'} ·
+                累计 {formatDuration(activeMainCareer.totalFocusSec)} / {activeMainCareer.totalSessions} 次
+              </p>
+            ) : (
+              <p className="text-slate-400 text-sm">当前没有 active 主线，请先创建并激活。</p>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <p className="text-slate-300 text-sm">创建并激活新主线</p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 w-full sm:w-auto disabled:opacity-60"
+                value={newCareerName}
+                onChange={(e) => setNewCareerName(e.target.value)}
+                placeholder="输入新的主线名称"
+                disabled={isAnySessionActive}
+              />
+              <button
+                className="button-primary sm:w-auto"
+                onClick={handleCreateNewCareer}
+                disabled={isAnySessionActive || newCareerName.trim().length < 2}
+              >
+                创建并激活
+              </button>
             </div>
-          </>
+          </div>
+        </div>
+        {nameStatus && (
+          <p
+            className={`text-sm mt-1 ${nameStatus.variant === 'success' ? 'text-emerald-300' : 'text-amber-300'}`}
+          >
+            {nameStatus.message}
+          </p>
+        )}
+        {isAnySessionActive && <p className="text-slate-400 text-sm mt-2">请先结束当前专注后再管理主线。</p>}
+      </header>
+
+      <section className="section-card">
+        <div className="section-title">计时控制区</div>
+        {dataLoading ? (
+          <p className="text-slate-400">加载中...</p>
+        ) : isLockedByOther ? (
+          <div className="space-y-3">
+            <p className="text-xl font-semibold text-amber-400">另一设备正在专注</p>
+            <p className="text-slate-400 text-sm">当前设备不可开始，等待对方结束。</p>
+            <button className="button-primary" disabled>
+              开始专注
+            </button>
+          </div>
+        ) : isActiveLocally ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="text-5xl font-mono text-sky-200">{formatDuration(remainingSec)}</div>
+              <div className="text-slate-400 text-sm">
+                <p>开始于：{new Date(activeSession.startAt).toLocaleTimeString()}</p>
+                <p>心跳每 45 秒自动续约</p>
+              </div>
+            </div>
+            <button className="button-primary" onClick={handleEnd}>
+              结束
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="text-5xl font-mono text-slate-200">{formatDuration(DEFAULT_SESSION_SECONDS)}</div>
+            <button
+              className="button-primary"
+              onClick={handleStart}
+              disabled={!deviceId || !uid || !activeMainCareer}
+            >
+              开始专注
+            </button>
+            {!activeMainCareer ? (
+              <p className="text-amber-300 text-sm">请先创建并激活主线后再开始专注。</p>
+            ) : (
+              <p className="text-slate-400 text-sm">开始专注需联网并写入 active session。</p>
+            )}
+          </div>
         )}
       </section>
 
-      {!uid && authReady && (
-        <section className="section-card">
-          <p className="text-slate-300 text-sm">登录后即可开始记录专注时长，邮箱账号可在不同平台复用。</p>
-        </section>
-      )}
-
-      {uid && (
-        <>
-          <header className="section-card">
-            <p className="text-sm text-slate-300">主线事业</p>
-            {status && <p className="text-amber-300 text-sm mt-2 break-all">{status}</p>}
-            <div className="grid gap-4 mt-3">
-              <div className="flex flex-col gap-2">
-                <p className="text-slate-300 text-sm">当前主线</p>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <input
-                    className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 w-full sm:w-auto disabled:opacity-60"
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onBlur={handleRename}
-                    placeholder={activeMainCareer ? '输入主线名称' : '请先创建主线'}
-                    disabled={!activeMainCareer || activeMainCareer.status === 'archived' || isAnySessionActive}
-                  />
-                  <button
-                    className="button-primary sm:w-auto"
-                    onClick={handleRename}
-                    disabled={!activeMainCareer || savingName || activeMainCareer.status === 'archived' || isAnySessionActive}
-                  >
-                    保存名称
-                  </button>
-                  <button
-                    className="px-4 py-2 rounded-lg border border-rose-400/60 text-rose-200 hover:border-rose-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={handleArchiveCareer}
-                    disabled={!activeMainCareer || activeMainCareer.status !== 'active' || isAnySessionActive}
-                  >
-                    归档当前主线
-                  </button>
-                </div>
-                {activeMainCareer ? (
-                  <p className="text-slate-400 text-sm">
-                    状态：{activeMainCareer.status === 'active' ? 'Active' : 'Archived'} ·
-                    累计 {formatDuration(activeMainCareer.totalFocusSec)} / {activeMainCareer.totalSessions} 次
-                  </p>
-                ) : (
-                  <p className="text-slate-400 text-sm">当前没有 active 主线，请先创建并激活。</p>
-                )}
-              </div>
-              <div className="flex flex-col gap-2">
-                <p className="text-slate-300 text-sm">创建并激活新主线</p>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <input
-                    className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 w-full sm:w-auto disabled:opacity-60"
-                    value={newCareerName}
-                    onChange={(e) => setNewCareerName(e.target.value)}
-                    placeholder="输入新的主线名称"
-                    disabled={isAnySessionActive}
-                  />
-                  <button
-                    className="button-primary sm:w-auto"
-                    onClick={handleCreateNewCareer}
-                    disabled={isAnySessionActive || newCareerName.trim().length < 2}
-                  >
-                    创建并激活
-                  </button>
-                </div>
-              </div>
-            </div>
-            {nameStatus && (
-              <p
-                className={`text-sm mt-1 ${nameStatus.variant === 'success' ? 'text-emerald-300' : 'text-amber-300'}`}
+      <section className="section-card">
+        <div className="section-title">主线历史</div>
+        {sortedCareers.length === 0 ? (
+          <p className="text-slate-400 text-sm">暂未创建主线。</p>
+        ) : (
+          <div className="space-y-3">
+            {sortedCareers.map((career) => (
+              <div
+                key={career.id}
+                className="p-4 bg-slate-800/60 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
               >
-                {nameStatus.message}
-              </p>
-            )}
-            {isAnySessionActive && <p className="text-slate-400 text-sm mt-2">请先结束当前专注后再管理主线。</p>}
-          </header>
-
-          <section className="section-card">
-            <div className="section-title">计时控制区</div>
-            {dataLoading ? (
-              <p className="text-slate-400">加载中...</p>
-            ) : isLockedByOther ? (
-              <div className="space-y-3">
-                <p className="text-xl font-semibold text-amber-400">另一设备正在专注</p>
-                <p className="text-slate-400 text-sm">当前设备不可开始，等待对方结束。</p>
-                <button className="button-primary" disabled>
-                  开始专注
-                </button>
-              </div>
-            ) : isActiveLocally ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="text-5xl font-mono text-sky-200">{formatDuration(remainingSec)}</div>
-                  <div className="text-slate-400 text-sm">
-                    <p>开始于：{new Date(activeSession.startAt).toLocaleTimeString()}</p>
-                    <p>心跳每 45 秒自动续约</p>
-                  </div>
+                <div>
+                  <p className="text-lg font-semibold text-slate-100">{career.title}</p>
+                  <p className="text-slate-400 text-sm">
+                    状态：{career.status === 'active' ? 'Active' : 'Archived'} ·
+                    累计 {formatDuration(career.totalFocusSec)} / {career.totalSessions} 次
+                  </p>
+                  <p className="text-slate-500 text-xs mt-1">
+                    启用：{formatTimestamp(career.activatedAt)} · 归档：{formatTimestamp(career.archivedAt)}
+                  </p>
                 </div>
-                <button className="button-primary" onClick={handleEnd}>
-                  结束
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="text-5xl font-mono text-slate-200">{formatDuration(DEFAULT_SESSION_SECONDS)}</div>
-                <button
-                  className="button-primary"
-                  onClick={handleStart}
-                  disabled={!deviceId || !uid || !activeMainCareer}
-                >
-                  开始专注
-                </button>
-                {!activeMainCareer ? (
-                  <p className="text-amber-300 text-sm">请先创建并激活主线后再开始专注。</p>
-                ) : (
-                  <p className="text-slate-400 text-sm">开始专注需联网并写入 active session。</p>
+                {career.status === 'archived' && (
+                  <button
+                    className="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:border-slate-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => handleActivateCareer(career.id ?? '')}
+                    disabled={isAnySessionActive}
+                  >
+                    激活此主线
+                  </button>
                 )}
               </div>
-            )}
-          </section>
+            ))}
+          </div>
+        )}
+      </section>
 
-          <section className="section-card">
-            <div className="section-title">主线历史</div>
-            {sortedCareers.length === 0 ? (
-              <p className="text-slate-400 text-sm">暂未创建主线。</p>
-            ) : (
-              <div className="space-y-3">
-                {sortedCareers.map((career) => (
-                  <div
-                    key={career.id}
-                    className="p-4 bg-slate-800/60 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-                  >
-                    <div>
-                      <p className="text-lg font-semibold text-slate-100">{career.title}</p>
-                      <p className="text-slate-400 text-sm">
-                        状态：{career.status === 'active' ? 'Active' : 'Archived'} ·
-                        累计 {formatDuration(career.totalFocusSec)} / {career.totalSessions} 次
-                      </p>
-                      <p className="text-slate-500 text-xs mt-1">
-                        启用：{formatTimestamp(career.activatedAt)} · 归档：{formatTimestamp(career.archivedAt)}
-                      </p>
-                    </div>
-                    {career.status === 'archived' && (
-                      <button
-                        className="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:border-slate-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                        onClick={() => handleActivateCareer(career.id ?? '')}
-                        disabled={isAnySessionActive}
-                      >
-                        激活此主线
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="section-card">
-            <div className="section-title">统计与可视化</div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
-                <p className="text-slate-400 text-sm">今日专注时间</p>
-                <p className="text-2xl font-semibold">{formatDuration(todayTotalSec)}</p>
-              </div>
-              <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
-                <p className="text-slate-400 text-sm">今日专注度</p>
-                <p className="text-2xl font-semibold">{(focusPercent * 100).toFixed(1)}%</p>
-              </div>
-              <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
-                <p className="text-slate-400 text-sm">累计专注时间</p>
-                <p className="text-2xl font-semibold">{formatHoursMinutes(totalFocusSec)}</p>
-              </div>
-              <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
-                <p className="text-slate-400 text-sm">下一个里程碑</p>
-                <p className="text-xl font-semibold">
-                  {milestoneInfo.nextMilestone ? `${milestoneInfo.nextMilestone} 小时` : '已超越所有里程碑'}
-                </p>
-                <p className="text-slate-400 text-sm mt-1">ETA: {milestoneInfo.nextMilestone ? etaText : 'N/A'}</p>
-              </div>
-            </div>
-            <div className="grid gap-4 mt-4 lg:grid-cols-3">
-              <StatProgressBar
-                title="今日进度条"
-                description="统计含义：今日专注时长 / 24 小时"
-                valueLabel={`${formatDuration(todayTotalSec)} / 24:00:00`}
-                percent={focusPercent * 100}
-                note="数据来源：daily_stats"
-              />
-              <StatProgressBar
-                title="趋势进度条"
-                description={
-                  averagePrevWeekSec > 0
-                    ? '统计含义：本周累计 / 近 4 周平均'
-                    : '统计含义：本周累计（暂无历史周均）'
-                }
-                valueLabel={`${formatDuration(currentWeekSec)} / ${formatDuration(weeklyTargetSec)}`}
-                percent={weeklyPercent}
-                note="数据来源：weekly_stats"
-              />
-              <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700 space-y-2">
-                <p className="text-slate-300 text-sm">主线进度条</p>
-                <p className="text-slate-400 text-xs">统计含义：累计专注时长 / 下一里程碑</p>
-                <AccumulationBar
-                  totalFocusSec={totalFocusSec}
-                  nextMilestoneHour={milestoneInfo.nextMilestone}
-                  prevMilestoneHour={milestoneInfo.prevMilestone}
-                  zoomLevel={zoomLevel}
-                  onZoomChange={setZoomLevel}
-                />
-                <p className="text-slate-500 text-xs">数据来源：global_stats</p>
-              </div>
-            </div>
-          </section>
-        </>
-      )}
+      <section className="section-card">
+        <div className="section-title">统计与可视化</div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
+            <p className="text-slate-400 text-sm">今日专注时间</p>
+            <p className="text-2xl font-semibold">{formatDuration(todayTotalSec)}</p>
+          </div>
+          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
+            <p className="text-slate-400 text-sm">今日专注度</p>
+            <p className="text-2xl font-semibold">{(focusPercent * 100).toFixed(1)}%</p>
+          </div>
+          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
+            <p className="text-slate-400 text-sm">累计专注时间</p>
+            <p className="text-2xl font-semibold">{formatHoursMinutes(totalFocusSec)}</p>
+          </div>
+          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700">
+            <p className="text-slate-400 text-sm">下一个里程碑</p>
+            <p className="text-xl font-semibold">
+              {milestoneInfo.nextMilestone ? `${milestoneInfo.nextMilestone} 小时` : '已超越所有里程碑'}
+            </p>
+            <p className="text-slate-400 text-sm mt-1">ETA: {milestoneInfo.nextMilestone ? etaText : 'N/A'}</p>
+          </div>
+        </div>
+        <div className="grid gap-4 mt-4 lg:grid-cols-3">
+          <StatProgressBar
+            title="今日进度条"
+            description="统计含义：今日专注时长 / 24 小时"
+            valueLabel={`${formatDuration(todayTotalSec)} / 24:00:00`}
+            percent={focusPercent * 100}
+            note="数据来源：daily_stats"
+          />
+          <StatProgressBar
+            title="趋势进度条"
+            description={
+              averagePrevWeekSec > 0
+                ? '统计含义：本周累计 / 近 4 周平均'
+                : '统计含义：本周累计（暂无历史周均）'
+            }
+            valueLabel={`${formatDuration(currentWeekSec)} / ${formatDuration(weeklyTargetSec)}`}
+            percent={weeklyPercent}
+            note="数据来源：weekly_stats"
+          />
+          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700 space-y-2">
+            <p className="text-slate-300 text-sm">主线进度条</p>
+            <p className="text-slate-400 text-xs">统计含义：累计专注时长 / 下一里程碑</p>
+            <AccumulationBar
+              totalFocusSec={totalFocusSec}
+              nextMilestoneHour={milestoneInfo.nextMilestone}
+              prevMilestoneHour={milestoneInfo.prevMilestone}
+              zoomLevel={zoomLevel}
+              onZoomChange={setZoomLevel}
+            />
+            <p className="text-slate-500 text-xs">数据来源：global_stats</p>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
