@@ -84,7 +84,7 @@ service cloud.firestore {
         );
       }
 
-      allow get, list: if isOwner(resource.data.user_uid);
+      allow get, list: if isSignedIn() && (statId.matches('^' + request.auth.uid + '_') || isOwner(resource.data.user_uid));
       allow create, update: if isOwner(request.resource.data.user_uid) && validDailyStat();
       allow delete: if false;
     }
@@ -103,7 +103,7 @@ service cloud.firestore {
         );
       }
 
-      allow get, list: if isOwner(resource.data.user_uid);
+      allow get, list: if isSignedIn() && (statId.matches('^' + request.auth.uid + '_') || isOwner(resource.data.user_uid));
       allow create, update: if isOwner(request.resource.data.user_uid) && validWeeklyStat();
       allow delete: if false;
     }
