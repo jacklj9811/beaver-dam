@@ -20,14 +20,15 @@ import {
   heartbeat,
   listenActiveSession,
   listMainCareers,
+  queryWeeklyStats,
   queryAllSessions,
   startActiveSession,
   updateMainCareerTitle
 } from '@/lib/firebase/firestore';
 import { getOrCreateDeviceId } from '@/lib/device/deviceId';
-import { DEFAULT_SESSION_SECONDS, formatDuration } from '@/lib/time';
+import { DEFAULT_SESSION_SECONDS, formatDuration, getStartOfWeek, getWeekKey } from '@/lib/time';
 import { findMilestone } from '@/lib/core/milestones';
-import type { ActiveSession, FocusSession, GlobalStat, MainCareer, UserProfile } from '@/types';
+import type { ActiveSession, FocusSession, GlobalStat, MainCareer, UserProfile, WeeklyStat } from '@/types';
 import type { Timestamp } from 'firebase/firestore';
 
 type LoginPageProps = {
@@ -196,6 +197,7 @@ export default function Home() {
   const [remainingSec, setRemainingSec] = useState(DEFAULT_SESSION_SECONDS);
   const [allSessions, setAllSessions] = useState<FocusSession[]>([]);
   const [globalStats, setGlobalStats] = useState<GlobalStat | null>(null);
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [nameStatus, setNameStatus] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
   const [savingName, setSavingName] = useState(false);
@@ -217,9 +219,14 @@ export default function Home() {
 
   const refreshSessions = useCallback(async () => {
     if (!uid) return;
-    const [sessions, global] = await Promise.all([queryAllSessions(uid), fetchGlobalStats(uid)]);
+    const [sessions, global, weekly] = await Promise.all([
+      queryAllSessions(uid),
+      fetchGlobalStats(uid),
+      queryWeeklyStats({ uid, lastNWeeks: 2 })
+    ]);
     setAllSessions(sessions);
     setGlobalStats(global);
+    setWeeklyStats(weekly);
   }, [uid]);
 
   const refreshMainCareers = useCallback(async () => {
@@ -239,6 +246,7 @@ export default function Home() {
         setNewCareerName('');
         setAllSessions([]);
         setGlobalStats(null);
+        setWeeklyStats([]);
         setActiveSession(null);
         setDataLoading(false);
         return;
@@ -375,7 +383,31 @@ export default function Home() {
 
   const totalFocusSec =
     globalStats?.totalFocusSec ?? userProfile?.totalFocusSec ?? allSessions.reduce((acc, cur) => acc + cur.durationSec, 0);
+  const now = new Date();
+  const startOfWeek = getStartOfWeek(now);
+  const currentWeekKey = getWeekKey(now);
+  const previousWeekKey = getWeekKey(new Date(startOfWeek.getTime() - 24 * 60 * 60 * 1000));
+  const thisWeekTotalSec = weeklyStats.find((stat) => stat.weekKey === currentWeekKey)?.totalFocusSec ?? 0;
+  const lastWeekTotalSec = weeklyStats.find((stat) => stat.weekKey === previousWeekKey)?.totalFocusSec ?? 0;
+  const startOfWeekTotalSec = Math.max(0, totalFocusSec - thisWeekTotalSec);
+  const elapsedThisWeekSec = Math.max(0, Math.floor((now.getTime() - startOfWeek.getTime()) / 1000));
+  const weekSeconds = 7 * 24 * 60 * 60;
+  const expectedTotalBaselineSec = startOfWeekTotalSec + lastWeekTotalSec;
+  const expectedTotalTrendSec =
+    startOfWeekTotalSec +
+    ((lastWeekTotalSec + thisWeekTotalSec) / (weekSeconds + elapsedThisWeekSec)) * (14 * 24 * 60 * 60);
   const milestoneInfo = findMilestone(totalFocusSec);
+  const accumulationMarkers = [
+    { label: '預期累積A', seconds: expectedTotalBaselineSec, colorClass: 'bg-emerald-300' },
+    { label: '預期累積B', seconds: expectedTotalTrendSec, colorClass: 'bg-sky-300' }
+  ];
+  if (milestoneInfo.nextMilestone) {
+    accumulationMarkers.push({
+      label: '下一里程碑',
+      seconds: milestoneInfo.nextMilestone * 3600,
+      colorClass: 'bg-amber-300'
+    });
+  }
 
   const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
   const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
@@ -632,6 +664,7 @@ export default function Home() {
             prevMilestoneHour={milestoneInfo.prevMilestone}
             zoomLevel={zoomLevel}
             onZoomChange={setZoomLevel}
+            markers={accumulationMarkers}
           />
           <p className="text-slate-500 text-xs">数据来源：global_stats</p>
         </div>

@@ -6,6 +6,7 @@ interface Props {
   prevMilestoneHour: number | null;
   zoomLevel: number;
   onZoomChange?: (level: number) => void;
+  markers?: Array<{ label: string; seconds: number; colorClass: string }>;
 }
 
 export default function AccumulationBar({
@@ -13,7 +14,8 @@ export default function AccumulationBar({
   nextMilestoneHour,
   prevMilestoneHour,
   zoomLevel,
-  onZoomChange
+  onZoomChange,
+  markers = []
 }: Props) {
   const totalHours = totalFocusSec / 3600;
   const hours = Math.floor(totalHours);
@@ -24,6 +26,8 @@ export default function AccumulationBar({
   const targetHours = nextMilestoneHour ?? Math.max(totalHours, prevMilestoneHour ?? 0);
   const step = getScaleStepHours(zoomLevel);
   const ticks = generateTicks(targetHours, step);
+  const markerHours = (seconds: number) => seconds / 3600;
+  const formatMarkerLabel = (seconds: number) => `${markerHours(seconds).toFixed(1)}h`;
 
   return (
     <div className="mt-4 space-y-3">
@@ -54,18 +58,41 @@ export default function AccumulationBar({
           <span>已超越所有里程碑</span>
         )}
       </div>
-      <div className="relative h-6 rounded-full bg-slate-800 border border-slate-700 overflow-hidden">
-        <div
-          className={`h-full ${nearMilestone ? 'bg-gradient-to-r from-amber-300 via-sky-400 to-sky-600' : 'bg-focus-primary'}`}
-          style={{ width: `${progressPercent}%` }}
-        />
-        <div className="absolute inset-0 flex items-center justify-between pointer-events-none text-[10px] text-slate-400">
-          {ticks.map((tick, idx) => (
-            <div key={`${tick}-${idx}`} className="flex flex-col items-center" style={{ width: `${100 / (ticks.length - 1)}%` }}>
-              <div className="w-px h-3 bg-slate-600" />
-              <span className="mt-1">{tick}</span>
-            </div>
-          ))}
+      <div className="relative overflow-visible">
+        <div className="relative h-6 rounded-full bg-slate-800 border border-slate-700 overflow-hidden">
+          <div
+            className={`h-full ${nearMilestone ? 'bg-gradient-to-r from-amber-300 via-sky-400 to-sky-600' : 'bg-focus-primary'}`}
+            style={{ width: `${progressPercent}%` }}
+          />
+          <div className="absolute inset-0 flex items-center justify-between pointer-events-none text-[10px] text-slate-400">
+            {ticks.map((tick, idx) => (
+              <div
+                key={`${tick}-${idx}`}
+                className="flex flex-col items-center"
+                style={{ width: `${100 / (ticks.length - 1)}%` }}
+              >
+                <div className="w-px h-3 bg-slate-600" />
+                <span className="mt-1">{tick}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="absolute inset-x-0 top-0 h-6 pointer-events-none">
+          {markers.map((marker) => {
+            const percent = targetHours ? Math.min(100, (markerHours(marker.seconds) / targetHours) * 100) : 0;
+            return (
+              <div
+                key={`${marker.label}-${marker.seconds}`}
+                className="absolute flex flex-col items-center"
+                style={{ left: `${percent}%`, transform: 'translateX(-50%)' }}
+              >
+                <span className="text-[10px] text-slate-200 bg-slate-900/80 px-1 rounded -translate-y-2 whitespace-nowrap">
+                  {marker.label} {formatMarkerLabel(marker.seconds)}
+                </span>
+                <div className={`w-px h-6 ${marker.colorClass}`} />
+              </div>
+            );
+          })}
         </div>
       </div>
       {nearMilestone && (
