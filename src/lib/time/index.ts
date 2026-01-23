@@ -43,3 +43,12 @@ export function getWeekKey(date: Date = new Date(), timeZone?: string): string {
   const weekYear = target.getUTCFullYear();
   return `${weekYear}-W${weekNumber.toString().padStart(2, '0')}`;
 }
+
+export function getStartOfWeek(date: Date = new Date()): Date {
+  const start = new Date(date);
+  const day = start.getDay();
+  const diff = (day + 6) % 7;
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - diff);
+  return start;
+}
