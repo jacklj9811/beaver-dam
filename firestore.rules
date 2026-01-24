@@ -89,7 +89,7 @@ service cloud.firestore {
       }
 
       allow get, list: if isSignedIn() &&
-        (statId.matches('^' + authUidOrEmpty() + '_') || (resource != null && isOwner(resource.data.user_uid)));
+        (statId.matches('^' + authUidOrEmpty() + '_.*$') || (resource != null && isOwner(resource.data.user_uid)));
       allow create, update: if isOwner(request.resource.data.user_uid) && validDailyStat();
       allow delete: if false;
     }
@@ -109,7 +109,7 @@ service cloud.firestore {
       }
 
       allow get, list: if isSignedIn() &&
-        (statId.matches('^' + authUidOrEmpty() + '_') || (resource != null && isOwner(resource.data.user_uid)));
+        (statId.matches('^' + authUidOrEmpty() + '_.*$') || (resource != null && isOwner(resource.data.user_uid)));
       allow create, update: if isOwner(request.resource.data.user_uid) && validWeeklyStat();
       allow delete: if false;
     }
