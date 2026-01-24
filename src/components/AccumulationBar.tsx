@@ -28,6 +28,7 @@ export default function AccumulationBar({
   const ticks = generateTicks(targetHours, step);
   const markerHours = (seconds: number) => seconds / 3600;
   const formatMarkerLabel = (seconds: number) => `${markerHours(seconds).toFixed(1)}h`;
+  const scaleMax = ticks.length ? ticks[ticks.length - 1] : targetHours;
 
   return (
     <div className="mt-4 space-y-3">
@@ -64,17 +65,23 @@ export default function AccumulationBar({
             className={`h-full ${nearMilestone ? 'bg-gradient-to-r from-amber-300 via-sky-400 to-sky-600' : 'bg-focus-primary'}`}
             style={{ width: `${progressPercent}%` }}
           />
-          <div className="absolute inset-0 flex items-center justify-between pointer-events-none text-[10px] text-slate-400">
-            {ticks.map((tick, idx) => (
-              <div
-                key={`${tick}-${idx}`}
-                className="flex flex-col items-center"
-                style={{ width: `${100 / (ticks.length - 1)}%` }}
-              >
-                <div className="w-px h-3 bg-slate-600" />
-                <span className="mt-1">{tick}</span>
-              </div>
-            ))}
+          <div className="absolute inset-0 pointer-events-none text-[10px] text-slate-400">
+            {ticks.map((tick, idx) => {
+              const percent = scaleMax ? (tick / scaleMax) * 100 : 0;
+              const clampedPercent = Math.max(0, Math.min(100, percent));
+              const translate =
+                clampedPercent <= 0 ? 'translateX(0)' : clampedPercent >= 100 ? 'translateX(-100%)' : 'translateX(-50%)';
+              return (
+                <div
+                  key={`${tick}-${idx}`}
+                  className="absolute flex flex-col items-center"
+                  style={{ left: `${clampedPercent}%`, transform: translate }}
+                >
+                  <div className="w-px h-3 bg-slate-600" />
+                  <span className="mt-1">{tick}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="absolute inset-x-0 top-0 h-6 pointer-events-none">

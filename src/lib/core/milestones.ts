@@ -45,7 +45,7 @@ export function getScaleStepHours(zoomLevel: number): number {
 
 export function generateTicks(targetHours: number, stepHours: number): number[] {
   const ticks: number[] = [];
-  const safeTarget = Math.max(stepHours, targetHours);
+  const safeTarget = targetHours > 0 ? targetHours : stepHours;
   for (let h = 0; h <= safeTarget + 0.0001; h += stepHours) {
     ticks.push(Number(h.toFixed(2)));
   }
