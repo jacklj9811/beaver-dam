@@ -5,8 +5,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function authUidOrEmpty() {
+      return request.auth != null ? request.auth.uid : '';
+    }
+
     function isOwner(uid) {
-      return isSignedIn() && request.auth.uid == uid;
+      return authUidOrEmpty() == uid;
     }
 
     function hasOnlyAllowedFields(allowed) {
@@ -85,7 +89,7 @@ service cloud.firestore {
       }
 
       allow get, list: if isSignedIn() &&
-        (statId.matches('^' + request.auth.uid + '_') || (resource != null && isOwner(resource.data.user_uid)));
+        (statId.matches('^' + authUidOrEmpty() + '_') || (resource != null && isOwner(resource.data.user_uid)));
       allow create, update: if isOwner(request.resource.data.user_uid) && validDailyStat();
       allow delete: if false;
     }
@@ -105,7 +109,7 @@ service cloud.firestore {
       }
 
       allow get, list: if isSignedIn() &&
-        (statId.matches('^' + request.auth.uid + '_') || (resource != null && isOwner(resource.data.user_uid)));
+        (statId.matches('^' + authUidOrEmpty() + '_') || (resource != null && isOwner(resource.data.user_uid)));
       allow create, update: if isOwner(request.resource.data.user_uid) && validWeeklyStat();
       allow delete: if false;
     }
