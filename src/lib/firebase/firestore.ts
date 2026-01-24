@@ -362,6 +362,21 @@ export async function endActiveSession(params: {
         const elapsedSec = Math.max(0, Math.floor((now.getTime() - startAt.getTime()) / 1000));
         const actualDurationSec = Math.min(elapsedSec, DEFAULT_SESSION_SECONDS);
         capturedDuration = actualDurationSec;
+        const dailyRef = doc(firestore, 'daily_stats', `${uid}_${todayKey}`);
+        const dailySnap = await tx.get(dailyRef);
+        const dailyData = dailySnap.data() as DailyStat | undefined;
+        const nextDailyFocus = (dailyData?.totalFocusSec ?? 0) + actualDurationSec;
+        const nextDailySessions = (dailyData?.totalSessions ?? 0) + 1;
+        const weeklyRef = doc(firestore, 'weekly_stats', `${uid}_${weekKey}`);
+        const weeklySnap = await tx.get(weeklyRef);
+        const weeklyData = weeklySnap.data() as WeeklyStat | undefined;
+        const nextWeeklyFocus = (weeklyData?.totalFocusSec ?? 0) + actualDurationSec;
+        const nextWeeklySessions = (weeklyData?.totalSessions ?? 0) + 1;
+        const globalRef = doc(firestore, 'global_stats', uid);
+        const globalSnap = await tx.get(globalRef);
+        const globalData = globalSnap.data() as GlobalStat | undefined;
+        const nextGlobalFocus = (globalData?.totalFocusSec ?? 0) + actualDurationSec;
+        const nextGlobalSessions = (globalData?.totalSessions ?? 0) + 1;
         const sessionRef = doc(collection(firestore, 'sessions'));
         createdSessionId = sessionRef.id;
         tx.set(sessionRef, {
@@ -372,11 +387,6 @@ export async function endActiveSession(params: {
           dayKey: todayKey,
           createdAt: nowTimestamp
         });
-        const dailyRef = doc(firestore, 'daily_stats', `${uid}_${todayKey}`);
-        const dailySnap = await tx.get(dailyRef);
-        const dailyData = dailySnap.data() as DailyStat | undefined;
-        const nextDailyFocus = (dailyData?.totalFocusSec ?? 0) + actualDurationSec;
-        const nextDailySessions = (dailyData?.totalSessions ?? 0) + 1;
         tx.set(
           dailyRef,
           {
@@ -388,11 +398,6 @@ export async function endActiveSession(params: {
           },
           { merge: true }
         );
-        const weeklyRef = doc(firestore, 'weekly_stats', `${uid}_${weekKey}`);
-        const weeklySnap = await tx.get(weeklyRef);
-        const weeklyData = weeklySnap.data() as WeeklyStat | undefined;
-        const nextWeeklyFocus = (weeklyData?.totalFocusSec ?? 0) + actualDurationSec;
-        const nextWeeklySessions = (weeklyData?.totalSessions ?? 0) + 1;
         tx.set(
           weeklyRef,
           {
@@ -404,11 +409,6 @@ export async function endActiveSession(params: {
           },
           { merge: true }
         );
-        const globalRef = doc(firestore, 'global_stats', uid);
-        const globalSnap = await tx.get(globalRef);
-        const globalData = globalSnap.data() as GlobalStat | undefined;
-        const nextGlobalFocus = (globalData?.totalFocusSec ?? 0) + actualDurationSec;
-        const nextGlobalSessions = (globalData?.totalSessions ?? 0) + 1;
         tx.set(
           globalRef,
           {
