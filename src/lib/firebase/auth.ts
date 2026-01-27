@@ -2,9 +2,11 @@ import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInAnonymously,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   linkWithCredential,
   type User
 } from 'firebase/auth';
@@ -45,4 +47,17 @@ export async function linkGuestWithEmail(email: string, password: string): Promi
 
 export async function signOutCurrentUser() {
   await signOut(firebaseAuth);
+}
+
+export async function changePasswordWithEmail(currentPassword: string, nextPassword: string): Promise<void> {
+  const user = firebaseAuth.currentUser;
+  if (!user || !user.email) {
+    throw new Error('当前未登录邮箱账号');
+  }
+  if (user.isAnonymous) {
+    throw new Error('匿名账号无法修改密码');
+  }
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updatePassword(user, nextPassword);
 }
