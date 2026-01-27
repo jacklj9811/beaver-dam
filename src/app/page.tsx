@@ -5,6 +5,7 @@ import type { User } from 'firebase/auth';
 import AccumulationBar from '@/components/AccumulationBar';
 import {
   listenAuthState,
+  changePasswordWithEmail,
   registerWithEmail,
   signInAsGuest,
   signInWithEmail,
@@ -203,6 +204,12 @@ export default function Home() {
   const [savingName, setSavingName] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(2);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [nextPassword, setNextPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState<string | null>(null);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [autoEnding, setAutoEnding] = useState(false);
 
   useEffect(() => {
     const unsubscribe = listenAuthState((user) => {
@@ -281,6 +288,30 @@ export default function Home() {
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [activeSession]);
+
+  const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
+  const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
+  const isAnySessionActive = activeSession?.status === 'active';
+
+  useEffect(() => {
+    if (!activeSession || activeSession.status !== 'active') return;
+    if (!isActiveLocally || autoEnding) return;
+    if (remainingSec > 0) return;
+    setAutoEnding(true);
+    endActiveSession({ uid: uid ?? '', deviceId })
+      .then(() => Promise.all([refreshSessions(), refreshMainCareers()]))
+      .catch((error) => setStatus(error instanceof Error ? error.message : '结束失败'))
+      .finally(() => setAutoEnding(false));
+  }, [
+    activeSession,
+    autoEnding,
+    deviceId,
+    isActiveLocally,
+    refreshMainCareers,
+    refreshSessions,
+    remainingSec,
+    uid
+  ]);
 
   useEffect(() => {
     if (!uid || !activeSession || activeSession.status !== 'active' || !deviceId || activeSession.deviceId !== deviceId)
@@ -409,10 +440,6 @@ export default function Home() {
     });
   }
 
-  const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
-  const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
-  const isAnySessionActive = activeSession?.status === 'active';
-
   const activeMainCareerId = userProfile?.activeMainCareerId ?? null;
   const activeMainCareer = mainCareers.find((career) => career.id === activeMainCareerId) ?? null;
   const sortedCareers = [...mainCareers].sort((a, b) => {
@@ -473,6 +500,35 @@ export default function Home() {
       setAuthStatus(error instanceof Error ? error.message : '退出失败');
     } finally {
       setAuthBusy(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (passwordBusy) return;
+    if (!currentPassword || !nextPassword || !confirmPassword) {
+      setPasswordStatus('请完整填写当前密码与新密码');
+      return;
+    }
+    if (nextPassword.length < 6) {
+      setPasswordStatus('新密码长度至少 6 位');
+      return;
+    }
+    if (nextPassword !== confirmPassword) {
+      setPasswordStatus('两次输入的新密码不一致');
+      return;
+    }
+    setPasswordStatus(null);
+    setPasswordBusy(true);
+    try {
+      await changePasswordWithEmail(currentPassword, nextPassword);
+      setPasswordStatus('密码已更新');
+      setCurrentPassword('');
+      setNextPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      setPasswordStatus(error instanceof Error ? error.message : '密码修改失败');
+    } finally {
+      setPasswordBusy(false);
     }
   };
 
@@ -581,6 +637,13 @@ export default function Home() {
           <div className="space-y-3">
             <p className="text-xl font-semibold text-amber-400">另一设备正在专注</p>
             <p className="text-slate-400 text-sm">当前设备不可开始，等待对方结束。</p>
+            <div className="flex items-center gap-4">
+              <div className="text-4xl font-mono text-sky-200">{formatDuration(remainingSec)}</div>
+              <div className="text-slate-400 text-xs">
+                <p>开始于：{new Date(activeSession.startAt).toLocaleTimeString()}</p>
+                <p>倒计时归零后会自动结束</p>
+              </div>
+            </div>
             <button className="button-primary" disabled>
               开始专注
             </button>
@@ -613,6 +676,50 @@ export default function Home() {
             ) : (
               <p className="text-slate-400 text-sm">开始专注需联网并写入 active session。</p>
             )}
+          </div>
+        )}
+      </section>
+
+      <section className="section-card">
+        <div className="section-title">账号安全</div>
+        {authUser?.isAnonymous ? (
+          <p className="text-slate-400 text-sm">匿名账号无法修改密码，请先升级为邮箱账号。</p>
+        ) : (
+          <div className="grid gap-4 max-w-md">
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-300">当前密码</label>
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="输入当前密码"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-300">新密码</label>
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                type="password"
+                value={nextPassword}
+                onChange={(e) => setNextPassword(e.target.value)}
+                placeholder="至少 6 位"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-300">确认新密码</label>
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="再次输入新密码"
+              />
+            </div>
+            <button className="button-primary" onClick={handleChangePassword} disabled={passwordBusy}>
+              {passwordBusy ? '更新中...' : '更新密码'}
+            </button>
+            {passwordStatus && <p className="text-sm text-amber-300">{passwordStatus}</p>}
           </div>
         )}
       </section>
