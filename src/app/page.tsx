@@ -149,14 +149,33 @@ function LoginPage({
 type AccountMenuProps = {
   authUser: User | null;
   authBusy: boolean;
+  currentPassword: string;
+  nextPassword: string;
+  confirmPassword: string;
+  passwordBusy: boolean;
+  passwordStatus: string | null;
+  onCurrentPasswordChange: (value: string) => void;
+  onNextPasswordChange: (value: string) => void;
+  onConfirmPasswordChange: (value: string) => void;
+  onChangePassword: () => void;
   onSignOut: () => void;
 };
 
-function AccountMenu({ authUser, authBusy, onSignOut }: AccountMenuProps) {
-  const handleScrollToPassword = () => {
-    const section = document.getElementById('account-security');
-    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+function AccountMenu({
+  authUser,
+  authBusy,
+  currentPassword,
+  nextPassword,
+  confirmPassword,
+  passwordBusy,
+  passwordStatus,
+  onCurrentPasswordChange,
+  onNextPasswordChange,
+  onConfirmPasswordChange,
+  onChangePassword,
+  onSignOut
+}: AccountMenuProps) {
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
 
   return (
     <div className="flex justify-end">
@@ -174,11 +193,49 @@ function AccountMenu({ authUser, authBusy, onSignOut }: AccountMenuProps) {
           {!authUser?.isAnonymous && (
             <button
               className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
-              onClick={handleScrollToPassword}
+              onClick={() => setShowPasswordForm((prev) => !prev)}
               type="button"
             >
-              修改密码
+              {showPasswordForm ? '收起密码设置' : '修改密码'}
             </button>
+          )}
+          {!authUser?.isAnonymous && showPasswordForm && (
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">当前密码</label>
+                <input
+                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => onCurrentPasswordChange(e.target.value)}
+                  placeholder="输入当前密码"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">新密码</label>
+                <input
+                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                  type="password"
+                  value={nextPassword}
+                  onChange={(e) => onNextPasswordChange(e.target.value)}
+                  placeholder="至少 6 位"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">确认新密码</label>
+                <input
+                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => onConfirmPasswordChange(e.target.value)}
+                  placeholder="再次输入新密码"
+                />
+              </div>
+              <button className="button-primary w-full" onClick={onChangePassword} disabled={passwordBusy}>
+                {passwordBusy ? '更新中...' : '更新密码'}
+              </button>
+              {passwordStatus && <p className="text-xs text-amber-300">{passwordStatus}</p>}
+            </div>
           )}
           <button
             className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
@@ -573,7 +630,20 @@ export default function Home() {
 
   return (
     <main className="layout-grid">
-      <AccountMenu authUser={authUser} authBusy={authBusy} onSignOut={handleSignOut} />
+      <AccountMenu
+        authUser={authUser}
+        authBusy={authBusy}
+        currentPassword={currentPassword}
+        nextPassword={nextPassword}
+        confirmPassword={confirmPassword}
+        passwordBusy={passwordBusy}
+        passwordStatus={passwordStatus}
+        onCurrentPasswordChange={setCurrentPassword}
+        onNextPasswordChange={setNextPassword}
+        onConfirmPasswordChange={setConfirmPassword}
+        onChangePassword={handleChangePassword}
+        onSignOut={handleSignOut}
+      />
       <header className="section-card">
         <p className="text-sm text-slate-300">主线事业</p>
         {status && <p className="text-amber-300 text-sm mt-2 break-all">{status}</p>}
