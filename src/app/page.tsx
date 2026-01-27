@@ -153,6 +153,11 @@ type AccountMenuProps = {
 };
 
 function AccountMenu({ authUser, authBusy, onSignOut }: AccountMenuProps) {
+  const handleScrollToPassword = () => {
+    const section = document.getElementById('account-security');
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div className="flex justify-end">
       <details className="relative">
@@ -166,6 +171,15 @@ function AccountMenu({ authUser, authBusy, onSignOut }: AccountMenuProps) {
             {authUser?.email ?? '匿名用户'}
             {authUser?.isAnonymous && '（匿名）'}
           </p>
+          {!authUser?.isAnonymous && (
+            <button
+              className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
+              onClick={handleScrollToPassword}
+              type="button"
+            >
+              修改密码
+            </button>
+          )}
           <button
             className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
             onClick={onSignOut}
@@ -676,6 +690,50 @@ export default function Home() {
             ) : (
               <p className="text-slate-400 text-sm">开始专注需联网并写入 active session。</p>
             )}
+          </div>
+        )}
+      </section>
+
+      <section className="section-card" id="account-security">
+        <div className="section-title">账号安全</div>
+        {authUser?.isAnonymous ? (
+          <p className="text-slate-400 text-sm">匿名账号无法修改密码，请先升级为邮箱账号。</p>
+        ) : (
+          <div className="grid gap-4 max-w-md">
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-300">当前密码</label>
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="输入当前密码"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-300">新密码</label>
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                type="password"
+                value={nextPassword}
+                onChange={(e) => setNextPassword(e.target.value)}
+                placeholder="至少 6 位"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-300">确认新密码</label>
+              <input
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="再次输入新密码"
+              />
+            </div>
+            <button className="button-primary" onClick={handleChangePassword} disabled={passwordBusy}>
+              {passwordBusy ? '更新中...' : '更新密码'}
+            </button>
+            {passwordStatus && <p className="text-sm text-amber-300">{passwordStatus}</p>}
           </div>
         )}
       </section>
