@@ -5,6 +5,7 @@ import type { User } from 'firebase/auth';
 import AccumulationBar from '@/components/AccumulationBar';
 import {
   listenAuthState,
+  changePasswordWithEmail,
   registerWithEmail,
   signInAsGuest,
   signInWithEmail,
@@ -148,10 +149,34 @@ function LoginPage({
 type AccountMenuProps = {
   authUser: User | null;
   authBusy: boolean;
+  currentPassword: string;
+  nextPassword: string;
+  confirmPassword: string;
+  passwordBusy: boolean;
+  passwordStatus: string | null;
+  onCurrentPasswordChange: (value: string) => void;
+  onNextPasswordChange: (value: string) => void;
+  onConfirmPasswordChange: (value: string) => void;
+  onChangePassword: () => void;
   onSignOut: () => void;
 };
 
-function AccountMenu({ authUser, authBusy, onSignOut }: AccountMenuProps) {
+function AccountMenu({
+  authUser,
+  authBusy,
+  currentPassword,
+  nextPassword,
+  confirmPassword,
+  passwordBusy,
+  passwordStatus,
+  onCurrentPasswordChange,
+  onNextPasswordChange,
+  onConfirmPasswordChange,
+  onChangePassword,
+  onSignOut
+}: AccountMenuProps) {
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+
   return (
     <div className="flex justify-end">
       <details className="relative">
@@ -165,6 +190,53 @@ function AccountMenu({ authUser, authBusy, onSignOut }: AccountMenuProps) {
             {authUser?.email ?? '匿名用户'}
             {authUser?.isAnonymous && '（匿名）'}
           </p>
+          {!authUser?.isAnonymous && (
+            <button
+              className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
+              onClick={() => setShowPasswordForm((prev) => !prev)}
+              type="button"
+            >
+              {showPasswordForm ? '收起密码设置' : '修改密码'}
+            </button>
+          )}
+          {!authUser?.isAnonymous && showPasswordForm && (
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">当前密码</label>
+                <input
+                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => onCurrentPasswordChange(e.target.value)}
+                  placeholder="输入当前密码"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">新密码</label>
+                <input
+                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                  type="password"
+                  value={nextPassword}
+                  onChange={(e) => onNextPasswordChange(e.target.value)}
+                  placeholder="至少 6 位"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">确认新密码</label>
+                <input
+                  className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => onConfirmPasswordChange(e.target.value)}
+                  placeholder="再次输入新密码"
+                />
+              </div>
+              <button className="button-primary w-full" onClick={onChangePassword} disabled={passwordBusy}>
+                {passwordBusy ? '更新中...' : '更新密码'}
+              </button>
+              {passwordStatus && <p className="text-xs text-amber-300">{passwordStatus}</p>}
+            </div>
+          )}
           <button
             className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 transition"
             onClick={onSignOut}
@@ -203,6 +275,12 @@ export default function Home() {
   const [savingName, setSavingName] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(2);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [nextPassword, setNextPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState<string | null>(null);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [autoEnding, setAutoEnding] = useState(false);
 
   useEffect(() => {
     const unsubscribe = listenAuthState((user) => {
@@ -281,6 +359,30 @@ export default function Home() {
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [activeSession]);
+
+  const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
+  const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
+  const isAnySessionActive = activeSession?.status === 'active';
+
+  useEffect(() => {
+    if (!activeSession || activeSession.status !== 'active') return;
+    if (!isActiveLocally || autoEnding) return;
+    if (remainingSec > 0) return;
+    setAutoEnding(true);
+    endActiveSession({ uid: uid ?? '', deviceId })
+      .then(() => Promise.all([refreshSessions(), refreshMainCareers()]))
+      .catch((error) => setStatus(error instanceof Error ? error.message : '结束失败'))
+      .finally(() => setAutoEnding(false));
+  }, [
+    activeSession,
+    autoEnding,
+    deviceId,
+    isActiveLocally,
+    refreshMainCareers,
+    refreshSessions,
+    remainingSec,
+    uid
+  ]);
 
   useEffect(() => {
     if (!uid || !activeSession || activeSession.status !== 'active' || !deviceId || activeSession.deviceId !== deviceId)
@@ -409,10 +511,6 @@ export default function Home() {
     });
   }
 
-  const isLockedByOther = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId !== deviceId);
-  const isActiveLocally = !!(activeSession && activeSession.status === 'active' && activeSession.deviceId === deviceId);
-  const isAnySessionActive = activeSession?.status === 'active';
-
   const activeMainCareerId = userProfile?.activeMainCareerId ?? null;
   const activeMainCareer = mainCareers.find((career) => career.id === activeMainCareerId) ?? null;
   const sortedCareers = [...mainCareers].sort((a, b) => {
@@ -476,6 +574,35 @@ export default function Home() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (passwordBusy) return;
+    if (!currentPassword || !nextPassword || !confirmPassword) {
+      setPasswordStatus('请完整填写当前密码与新密码');
+      return;
+    }
+    if (nextPassword.length < 6) {
+      setPasswordStatus('新密码长度至少 6 位');
+      return;
+    }
+    if (nextPassword !== confirmPassword) {
+      setPasswordStatus('两次输入的新密码不一致');
+      return;
+    }
+    setPasswordStatus(null);
+    setPasswordBusy(true);
+    try {
+      await changePasswordWithEmail(currentPassword, nextPassword);
+      setPasswordStatus('密码已更新');
+      setCurrentPassword('');
+      setNextPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      setPasswordStatus(error instanceof Error ? error.message : '密码修改失败');
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
+
   if (!authReady) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4 py-10">
@@ -503,7 +630,20 @@ export default function Home() {
 
   return (
     <main className="layout-grid">
-      <AccountMenu authUser={authUser} authBusy={authBusy} onSignOut={handleSignOut} />
+      <AccountMenu
+        authUser={authUser}
+        authBusy={authBusy}
+        currentPassword={currentPassword}
+        nextPassword={nextPassword}
+        confirmPassword={confirmPassword}
+        passwordBusy={passwordBusy}
+        passwordStatus={passwordStatus}
+        onCurrentPasswordChange={setCurrentPassword}
+        onNextPasswordChange={setNextPassword}
+        onConfirmPasswordChange={setConfirmPassword}
+        onChangePassword={handleChangePassword}
+        onSignOut={handleSignOut}
+      />
       <header className="section-card">
         <p className="text-sm text-slate-300">主线事业</p>
         {status && <p className="text-amber-300 text-sm mt-2 break-all">{status}</p>}
@@ -581,6 +721,13 @@ export default function Home() {
           <div className="space-y-3">
             <p className="text-xl font-semibold text-amber-400">另一设备正在专注</p>
             <p className="text-slate-400 text-sm">当前设备不可开始，等待对方结束。</p>
+            <div className="flex items-center gap-4">
+              <div className="text-4xl font-mono text-sky-200">{formatDuration(remainingSec)}</div>
+              <div className="text-slate-400 text-xs">
+                <p>开始于：{new Date(activeSession.startAt).toLocaleTimeString()}</p>
+                <p>倒计时归零后会自动结束</p>
+              </div>
+            </div>
             <button className="button-primary" disabled>
               开始专注
             </button>
